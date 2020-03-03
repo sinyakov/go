@@ -49,7 +49,7 @@ func getPngHandler(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		timeParam = timeSlc[0]
 		timePattern := "^(0[0-9]|1[0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9])$"
-		ok, err := regexp.MatchString(timePattern, timeParam)
+		ok, err = regexp.MatchString(timePattern, timeParam)
 
 		if err != nil || !ok {
 			http.Error(w, "invalid time param", http.StatusBadRequest)
@@ -64,5 +64,9 @@ func getPngHandler(w http.ResponseWriter, r *http.Request) {
 	img := CreateImage(timeParam, sizeParam)
 
 	w.Header().Set("Content-Type", "image/png")
-	png.Encode(w, img)
+	err = png.Encode(w, img)
+
+	if err != nil {
+		http.Error(w, "render image error", http.StatusBadRequest)
+	}
 }

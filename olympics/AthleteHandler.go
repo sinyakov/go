@@ -61,5 +61,9 @@ func AthleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(b)
+	_, err = w.Write(b)
+
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}
 }

@@ -60,7 +60,12 @@ func main() {
 	}
 
 	byteValue, _ := ioutil.ReadAll(jsonFile)
-	json.Unmarshal(byteValue, &athletes)
+	err = json.Unmarshal(byteValue, &athletes)
+
+	if err != nil {
+		log.Fatal("json parsing error")
+		return
+	}
 
 	defer jsonFile.Close()
 

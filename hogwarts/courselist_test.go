@@ -14,6 +14,9 @@ func impl(t *testing.T, prereqs map[string][]string, courseList []string) {
 				t.Errorf("course %v (index %v) depends on course %v which is not taken yet", course, index, prereq)
 			}
 		}
+		if learned[course] {
+			t.Errorf("course %v (index %v) has been taken at least twice", course, index)
+		}
 		learned[course] = true
 	}
 	for course := range prereqs {
@@ -85,5 +88,16 @@ func TestGetCourseList_weirdScience(t *testing.T) {
 	}
 	require.Panics(t, func() {
 		impl(t, weirdScience, GetCourseList(weirdScience))
+	})
+}
+
+func TestGetCourseList_strangeScience(t *testing.T) {
+	var strangeScience = map[string][]string{
+		"1": {"0"},
+		"2": {"1", "3"},
+		"3": {"2"},
+	}
+	require.Panics(t, func() {
+		impl(t, strangeScience, GetCourseList(strangeScience))
 	})
 }

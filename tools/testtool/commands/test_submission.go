@@ -242,21 +242,34 @@ func runTests(testDir, privateRepo, problem string) error {
 		}
 	}
 
+	coverageReq := getCoverageRequirements(path.Join(privateRepo, problem))
+	if coverageReq.Enabled {
+		log.Printf("required coverage: %.2f%%", coverageReq.Percent)
+	}
+
 	binariesJSON, _ := json.Marshal(binaries)
 
 	for testPkg := range testPkgs {
 		binPath := filepath.Join(binCache, randomName())
 		testBinaries[testPkg] = binPath
-		if err := runGo("test", "-mod", "readonly", "-tags", "private", "-c", "-o", binPath, testPkg); err != nil {
+		cmd := []string{"test", "-mod", "readonly", "-tags", "private", "-c", "-o", binPath, testPkg}
+		if coverageReq.Enabled {
+			cmd = append(cmd, "-cover")
+		}
+		if err := runGo(cmd...); err != nil {
 			return fmt.Errorf("error building test in %s: %w", testPkg, err)
 		}
 	}
 
 	for testPkg, testBinary := range testBinaries {
 		relPath := strings.TrimPrefix(testPkg, moduleImportPath)
+		coverProfile := path.Join(os.TempDir(), randomName())
 
 		{
 			cmd := exec.Command(testBinary)
+			if coverageReq.Enabled {
+				cmd = exec.Command(testBinary, "-test.coverprofile", coverProfile)
+			}
 			if currentUserIsRoot() {
 				if err := sandbox(cmd); err != nil {
 					log.Fatal(err)
@@ -270,6 +283,20 @@ func runTests(testDir, privateRepo, problem string) error {
 
 			if err := cmd.Run(); err != nil {
 				return &TestFailedError{E: err}
+			}
+		}
+
+		if coverageReq.Enabled {
+			log.Printf("checking coverage is at least %.2f%% for %s", coverageReq.Percent, testPkg)
+
+			percent, err := calCoverage(coverProfile)
+			if err != nil {
+				return err
+			}
+
+			if percent < coverageReq.Percent {
+				return fmt.Errorf("poor coverage %.2f%%; expected at least %.2f%%",
+					percent, coverageReq.Percent)
 			}
 		}
 

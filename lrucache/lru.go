@@ -66,9 +66,6 @@ func (c *cache) Set(key, value int) {
 	}
 
 	if c.elements.Len() >= c.cap {
-		// oldestCacheElement.key = key
-		// oldestCacheElement.value = value
-		// oldestCacheElement.lastAccessedAt = time.Time{}
 		c.elements.Remove(oldestElement)
 	}
 

@@ -77,10 +77,6 @@ func UpdateValue(c kvapi.Client, key string, updateFn func(oldValue *string) (ne
 				}
 				return nil
 			}
-
-			if _, ok := err.(*kvapi.APIError); ok {
-				continue
-			}
 		}
 	}
 }

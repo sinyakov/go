@@ -23,7 +23,7 @@ func TestEqual(t *testing.T) {
 		{name: "uint16", expected: uint16(1), actual: uint16(1)},
 		{name: "uint32", expected: uint32(1), actual: uint32(1)},
 		{name: "uint64", expected: uint64(1), actual: uint64(1)},
-		{name: "string", expected: 1, actual: 1},
+		{name: "string", expected: "1", actual: "1"},
 		{name: "slice", expected: []int{1, 2, 3}, actual: []int{1, 2, 3}},
 		{name: "map", expected: map[string]string{"a": "b"}, actual: map[string]string{"a": "b"}},
 		{name: "bytes", expected: []byte(`abc`), actual: []byte(`abc`)},
@@ -31,6 +31,9 @@ func TestEqual(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			AssertEqual(t, tc.expected, tc.actual)
 			RequireEqual(t, tc.expected, tc.actual)
+
+			mockT := new(testing.T)
+			require.False(t, AssertNotEqual(mockT, tc.expected, tc.actual))
 		})
 	}
 }
@@ -64,12 +67,14 @@ func TestNotEqual(t *testing.T) {
 		{expected: []int{1, 2, 3, 4}, actual: []int{1, 2, 3}},
 		{expected: []int{}, actual: []interface{}{}},
 		{expected: []int{}, actual: *new([]int)},
+		{expected: []int{}, actual: map[int]int{}},
 		{expected: map[string]string{"a": "b"}, actual: map[string]string{}},
 		{expected: map[string]string{"a": "b"}, actual: map[string]string{"a": "d"}},
 		{expected: map[string]string{"a": "b"}, actual: map[string]string{"a": "b", "c": "b"}},
 		{expected: map[string]string{"a": "b", "c": "b"}, actual: map[string]string{"a": "b"}},
 		{expected: map[string]string{"a": "b"}, actual: map[string]interface{}{"a": "b"}},
 		{expected: map[string]string{}, actual: *new(map[string]string)},
+		{expected: map[int]int{}, actual: []int{}},
 		{expected: []byte{}, actual: *new([]byte)},
 		{expected: []byte{}, actual: nil},
 		{expected: *new([]byte), actual: nil},
@@ -78,6 +83,9 @@ func TestNotEqual(t *testing.T) {
 		t.Run(fmt.Sprintf("%T_%T", tc.expected, tc.actual), func(t *testing.T) {
 			AssertNotEqual(t, tc.expected, tc.actual)
 			RequireNotEqual(t, tc.expected, tc.actual)
+
+			mockT := new(testing.T)
+			require.False(t, AssertEqual(mockT, tc.expected, tc.actual))
 		})
 	}
 }

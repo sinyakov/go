@@ -27,9 +27,9 @@ func (lr *lineReader) ReadLine() (string, error) {
 
 		if b == '\n' {
 			return sb.String(), nil
-		} else {
-			sb.WriteString(string(b))
 		}
+
+		sb.WriteString(string(b))
 	}
 
 }
@@ -100,7 +100,11 @@ func Merge(w LineWriter, readers ...LineReader) error {
 	for h.Len() > 0 {
 		minLineReaderHeapItem := heap.Pop(h).(LineReaderHeapItem)
 
-		w.Write(minLineReaderHeapItem.top)
+		err := w.Write(minLineReaderHeapItem.top)
+
+		if err != nil {
+			return err
+		}
 
 		str, err := minLineReaderHeapItem.lr.ReadLine()
 		if err == nil || (str != "" && err == io.EOF) {
@@ -127,12 +131,13 @@ func Sort(w io.Writer, in ...string) error {
 
 		var lines []string
 		for {
-			str, err := lr.ReadLine()
+			str, rlErr := lr.ReadLine()
 
-			if err == io.EOF && str != "" {
+			if rlErr == io.EOF && str != "" {
 				lines = append(lines, str)
 			}
-			if err != nil {
+
+			if rlErr != nil {
 				break
 			}
 
@@ -151,7 +156,10 @@ func Sort(w io.Writer, in ...string) error {
 		lw := NewWriter(f)
 
 		for _, str := range lines {
-			lw.Write(str)
+			err := lw.Write(str)
+			if err != nil {
+				return err
+			}
 		}
 		f.Close()
 	}
@@ -167,6 +175,11 @@ func Sort(w io.Writer, in ...string) error {
 		readers = append(readers, lr)
 	}
 
-	Merge(lw, readers...)
+	err := Merge(lw, readers...)
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

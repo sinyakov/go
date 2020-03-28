@@ -32,10 +32,6 @@ func (c *cache) Clear() {
 	c.seq.Init()
 }
 
-func (c *cache) GetItems() map[int]*list.Element {
-	return c.elems
-}
-
 func (c *cache) Get(key int) (int, bool) {
 	if elem, ok := c.elems[key]; ok {
 		c.seq.MoveToFront(elem)
@@ -56,12 +52,11 @@ func (c *cache) Set(key, value int) {
 		return
 	}
 
-	elem := &cacheElement{
+	seqItem := c.seq.PushFront(&cacheElement{
 		key:   key,
 		value: value,
-	}
+	})
 
-	seqItem := c.seq.PushFront(elem)
 	c.elems[key] = seqItem
 
 	if c.seq.Len() > c.cap {

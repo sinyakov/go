@@ -4,39 +4,44 @@ package lrucache
 
 import (
 	"container/list"
-	"time"
 )
 
 type cache struct {
-	elements *list.List
-	cap      int
+	elems map[int]*list.Element
+	seq   *list.List
+	cap   int
 }
 
 type cacheElement struct {
-	key            int
-	value          int
-	lastAccessedAt time.Time
+	key   int
+	value int
 }
 
 func New(cap int) Cache {
 	return &cache{
-		elements: list.New(),
-		cap:      cap,
+		elems: make(map[int]*list.Element),
+		seq:   list.New(),
+		cap:   cap,
 	}
 }
 
 func (c *cache) Clear() {
-	c.elements = list.New()
+	for k := range c.elems {
+		delete(c.elems, k)
+	}
+	c.seq.Init()
+}
+
+func (c *cache) GetItems() map[int]*list.Element {
+	return c.elems
 }
 
 func (c *cache) Get(key int) (int, bool) {
-	for e := c.elements.Front(); e != nil; e = e.Next() {
-		elem := e.Value.(*cacheElement)
-		if elem.key == key {
-			elem.lastAccessedAt = time.Now()
-			return elem.value, true
-		}
+	if elem, ok := c.elems[key]; ok {
+		c.seq.MoveToFront(elem)
+		return elem.Value.(*cacheElement).value, true
 	}
+
 	return 0, false
 }
 
@@ -45,35 +50,27 @@ func (c *cache) Set(key, value int) {
 		return
 	}
 
-	if c.elements.Front() == nil {
-		c.elements.PushBack(&cacheElement{key: key, value: value})
+	if elem, ok := c.elems[key]; ok {
+		c.seq.MoveToFront(elem)
+		elem.Value.(*cacheElement).value = value
+		return
 	}
 
-	oldestElement := c.elements.Front()
-	oldestCacheElement := oldestElement.Value.(*cacheElement)
-
-	for e := c.elements.Front(); e != nil; e = e.Next() {
-		elem := e.Value.(*cacheElement)
-		if elem.key == key {
-			c.elements.Remove(e)
-			c.elements.PushBack(&cacheElement{key: key, value: value})
-			return
-		}
-		if elem.lastAccessedAt.Before(oldestCacheElement.lastAccessedAt) {
-			oldestCacheElement = elem
-			oldestElement = e
-		}
+	elem := &cacheElement{
+		key:   key,
+		value: value,
 	}
 
-	if c.elements.Len() >= c.cap {
-		c.elements.Remove(oldestElement)
-	}
+	seqItem := c.seq.PushFront(elem)
+	c.elems[key] = seqItem
 
-	c.elements.PushBack(&cacheElement{key: key, value: value})
+	if c.seq.Len() > c.cap {
+		c.seq.Remove(c.seq.Back())
+	}
 }
 
 func (c *cache) Range(f func(key, value int) bool) {
-	for e := c.elements.Front(); e != nil; e = e.Next() {
+	for e := c.seq.Back(); e != nil; e = e.Prev() {
 		elem := e.Value.(*cacheElement)
 		if !f(elem.key, elem.value) {
 			break

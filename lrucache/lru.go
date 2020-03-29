@@ -19,7 +19,7 @@ type cacheElement struct {
 
 func New(cap int) Cache {
 	return &cache{
-		elems: make(map[int]*list.Element),
+		elems: make(map[int]*list.Element, cap),
 		seq:   list.New(),
 		cap:   cap,
 	}

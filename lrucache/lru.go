@@ -10,6 +10,7 @@ type cache struct {
 	elems map[int]*list.Element
 	seq   *list.List
 	cap   int
+	size  int
 }
 
 type cacheElement struct {
@@ -19,9 +20,10 @@ type cacheElement struct {
 
 func New(cap int) Cache {
 	return &cache{
-		elems: make(map[int]*list.Element, cap),
+		elems: make(map[int]*list.Element),
 		seq:   list.New(),
 		cap:   cap,
+		size:  0,
 	}
 }
 
@@ -30,6 +32,7 @@ func (c *cache) Clear() {
 		delete(c.elems, k)
 	}
 	c.seq.Init()
+	c.size = 0
 }
 
 func (c *cache) Get(key int) (int, bool) {
@@ -58,9 +61,11 @@ func (c *cache) Set(key, value int) {
 	})
 
 	c.elems[key] = seqItem
+	c.size++
 
-	if c.seq.Len() > c.cap {
+	if c.size > c.cap {
 		c.seq.Remove(c.seq.Back())
+		c.size--
 	}
 }
 

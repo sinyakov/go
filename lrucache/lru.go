@@ -60,7 +60,9 @@ func (c *cache) Set(key, value int) {
 	c.elems[key] = seqItem
 
 	if c.seq.Len() > c.cap {
-		c.seq.Remove(c.seq.Back())
+		oldest := c.seq.Back()
+		c.seq.Remove(oldest)
+		delete(c.elems, oldest.Value.(*cacheElement).key)
 	}
 }
 

@@ -43,7 +43,7 @@ func TestPubSub_nonBlockPublish(t *testing.T) {
 	wg.Add(11)
 
 	_, err := p.Subscribe("non-bock-topic", func(msg interface{}) {
-		time.Sleep(1 * time.Second)
+		time.Sleep(10 * time.Millisecond)
 		wg.Done()
 	})
 	require.NoError(t, err)
@@ -58,11 +58,39 @@ func TestPubSub_nonBlockPublish(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(1 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("publish method must not be blocked")
 	case <-done:
 		// ok
 	}
+}
+
+func TestPubSub_multipleSubjects(t *testing.T) {
+	p := NewPubSub()
+	defer checkedClose(t, p)
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	_, err := p.Subscribe("sub1", func(msg interface{}) {
+		require.Equal(t, "blah-blah-1", msg)
+		wg.Done()
+	})
+	require.NoError(t, err)
+
+	_, err = p.Subscribe("sub2", func(msg interface{}) {
+		require.Equal(t, "blah-blah-2", msg)
+		wg.Done()
+	})
+	require.NoError(t, err)
+
+	err = p.Publish("sub1", "blah-blah-1")
+	require.NoError(t, err)
+
+	err = p.Publish("sub2", "blah-blah-2")
+	require.NoError(t, err)
+
+	wg.Wait()
 }
 
 func TestPubSub_multipleSubscribers(t *testing.T) {
@@ -311,6 +339,26 @@ func TestPubSub_close(t *testing.T) {
 		cancel()
 		wg.Wait()
 	}
+}
+
+func TestPubSub_closeWaitsMessageDelivery(t *testing.T) {
+	p := NewPubSub()
+
+	wg := sync.WaitGroup{}
+
+	_, err := p.Subscribe("q", func(msg interface{}) {
+		time.Sleep(100 * time.Millisecond)
+		wg.Done()
+	})
+	require.NoError(t, err)
+
+	for i := 0; i < 11; i++ {
+		wg.Add(1)
+		err = p.Publish("q", "pew-pew")
+		require.NoError(t, err)
+	}
+	checkedClose(t, p)
+	wg.Wait()
 }
 
 func checkedClose(t *testing.T, c interface {

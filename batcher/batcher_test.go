@@ -27,6 +27,18 @@ func TestSimple(t *testing.T) {
 	require.Equal(t, 2, value.Load())
 }
 
+func TestTwoParallelLoads(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	var value slow.Value
+	b := NewBatcher(&value)
+
+	value.Store(1)
+	go func() {
+		require.Equal(t, 1, b.Load())
+	}()
+	require.Equal(t, 1, b.Load())
+}
+
 func TestStaleRead(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
@@ -49,7 +61,7 @@ func TestStaleRead(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			time.Sleep(time.Millisecond * time.Duration(i/N))
+			time.Sleep(time.Duration(i) * time.Millisecond / time.Duration(N))
 			for j := 0; j < K; j++ {
 				counterValue := atomic.LoadInt32(&counter)
 				batcherValue := b.Load().(int32)

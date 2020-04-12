@@ -32,7 +32,7 @@ type Subscriber struct {
 func (s *Subscriber) Publish(msg interface{}) {
 	s.mu.Lock()
 	s.msg <- msg
-	if s.isPublishing == true {
+	if s.isPublishing {
 		s.mu.Unlock()
 		return
 	}

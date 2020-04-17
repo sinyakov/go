@@ -158,6 +158,20 @@ rules:
 			expected: result{code: http.StatusOK, body: `{"user_id": 123}`},
 		},
 		{
+			name: "empty-rule",
+			conf: `
+rules:
+  - endpoint: "/list"
+`,
+			service: echoService,
+			makeRequest: func() *resty.Request {
+				return c.R().
+					SetBody(`{"user_id": 123}`)
+			},
+			endpoint: "/list",
+			expected: result{code: http.StatusOK, body: `{"user_id": 123}`},
+		},
+		{
 			name: "bad-user-agent",
 			conf: `
 rules:
@@ -267,6 +281,40 @@ rules:
 				return c.R().SetBody(`{"user": "admin", "password": "1234"}`)
 			},
 			expected: result{code: http.StatusForbidden, body: "Forbidden"},
+		},
+		{
+			name: "many-rules-forbidden",
+			conf: `
+rules:
+  - endpoint: "/list"
+    forbidden_response_re:
+      - '.*admin.*'
+  - endpoint: "/dump"
+    max_response_length_bytes: 4
+`,
+			service: echoService,
+			makeRequest: func() *resty.Request {
+				return c.R().SetBody(`hello`)
+			},
+			endpoint: "/dump",
+			expected: result{code: http.StatusForbidden, body: "Forbidden"},
+		},
+		{
+			name: "many-rules-ok",
+			conf: `
+rules:
+  - endpoint: "/list"
+    forbidden_response_re:
+      - '.*admin.*'
+  - endpoint: "/dump"
+    max_response_length_bytes: 4
+`,
+			service: echoService,
+			makeRequest: func() *resty.Request {
+				return c.R().SetBody(`hello`)
+			},
+			endpoint: "/list",
+			expected: result{code: http.StatusOK, body: "hello"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

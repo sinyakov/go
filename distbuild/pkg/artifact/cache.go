@@ -55,7 +55,6 @@ func (c *Cache) Remove(artifact build.ID) error {
 	c.artifactsMutex.Lock()
 	defer c.artifactsMutex.Unlock()
 
-	// fmt.Println(artifactCache)
 	artifactCache, exists := c.artifacts[artifact]
 	if !exists {
 		return ErrNotFound
@@ -86,7 +85,7 @@ func (c *Cache) Create(artifact build.ID) (path string, commit, abort func() err
 		return "", nil, nil, ErrExists
 	}
 
-	path = gopath.Join(c.rootDir, artifact.String())
+	path = gopath.Join(c.rootDir, artifact.Path())
 	err = os.MkdirAll(path, 0755)
 	if err != nil {
 		return "", nil, nil, err
@@ -134,22 +133,26 @@ func (c *Cache) Get(artifact build.ID) (path string, unlock func(), err error) {
 	c.artifactsMutex.Lock()
 	defer c.artifactsMutex.Unlock()
 
-	artifactCache, exists := c.artifacts[artifact]
-	if !exists {
+	path = gopath.Join(c.rootDir, artifact.Path())
+	_, err = os.Stat(path)
+
+	if err != nil {
 		return "", nil, ErrNotFound
 	}
 
-	if artifactCache.writeLocked {
-		return "", nil, ErrWriteLocked
-	}
+	artifactCache, exists := c.artifacts[artifact]
+	if exists {
+		if artifactCache.writeLocked {
+			return "", nil, ErrWriteLocked
+		}
 
-	if artifactCache.readLocked {
-		return "", nil, ErrReadLocked
+		if artifactCache.readLocked {
+			return "", nil, ErrReadLocked
+		}
 	}
 
 	artifactCache.readLocked = true
 
-	path = gopath.Join(c.rootDir, artifact.String())
 	unlock = func() {
 		c.artifactsMutex.Lock()
 		defer c.artifactsMutex.Unlock()
@@ -157,5 +160,5 @@ func (c *Cache) Get(artifact build.ID) (path string, unlock func(), err error) {
 		artifactCache.readLocked = false
 	}
 
-	return c.rootDir, unlock, nil
+	return path, unlock, nil
 }

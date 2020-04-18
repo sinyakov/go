@@ -13,7 +13,7 @@ import (
 
 // Download artifact from remote cache into local cache.
 func Download(ctx context.Context, endpoint string, c *Cache, artifactID build.ID) error {
-	resp, err := http.Get(endpoint + "/artifact?id=" + artifactID.String())
+	resp, err := http.Get(endpoint + "/artifact?id=" + artifactID.Path())
 	if err != nil {
 		return err
 	}

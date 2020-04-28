@@ -26,19 +26,21 @@ func NewHeartbeatClient(l *zap.Logger, endpoint string) *HeartbeatClient {
 }
 
 func (c *HeartbeatClient) Heartbeat(ctx context.Context, heartbeatReq *HeartbeatRequest) (*HeartbeatResponse, error) {
+	c.logger.Info("pkg/api/heartbeat_client.go Heartbeat")
+
 	httpClient := &http.Client{}
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(heartbeatReq)
 
-	req, err := http.NewRequest(http.MethodPost, c.endpoint+"/heartbeat", b)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/heartbeat", b)
 	if err != nil {
-		c.logger.Error("Heartbeat request", zap.Error(err))
+		c.logger.Error("pkg/api/heartbeat_client.go Heartbeat request", zap.Error(err))
 		return nil, err
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.logger.Error("Heartbeat do request", zap.Error(err))
+		c.logger.Error("pkg/api/heartbeat_client.go Heartbeat do request", zap.Error(err))
 		return nil, err
 	}
 
@@ -53,8 +55,10 @@ func (c *HeartbeatClient) Heartbeat(ctx context.Context, heartbeatReq *Heartbeat
 	var heartbeatResponse HeartbeatResponse
 	err = json.NewDecoder(resp.Body).Decode(&heartbeatResponse)
 	if err != nil {
-		c.logger.Error("Heartbeat body parse", zap.Error(err))
+		c.logger.Error("pkg/api/heartbeat_client.go Heartbeat body parse", zap.Error(err))
 		return nil, err
 	}
+	// c.logger.Info("pkg/api/heartbeat_client.go Heartbeat response")
+	// spew.Dump(heartbeatResponse)
 	return &heartbeatResponse, nil
 }

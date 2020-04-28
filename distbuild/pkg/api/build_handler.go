@@ -57,10 +57,12 @@ func (sw *statusWriter) Updated(update *StatusUpdate) error {
 
 func (h *BuildHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/build", func(w http.ResponseWriter, r *http.Request) {
+		h.logger.Info("pkg/api/build_handler.go /build")
+
 		var buildRequest BuildRequest
 		err := json.NewDecoder(r.Body).Decode(&buildRequest)
 		if err != nil {
-			h.logger.Error("/build request JSON decode error", zap.Error(err))
+			h.logger.Error("pkg/api/build_handler.go /build request JSON decode error", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -69,7 +71,7 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 
 		err = h.service.StartBuild(r.Context(), &buildRequest, stWriter)
 		if err != nil {
-			h.logger.Error("/build SignalBuild error", zap.Error(err))
+			h.logger.Error("pkg/api/build_handler.go /build error", zap.Error(err))
 			if !stWriter.isHeaderWrited {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			} else {
@@ -83,6 +85,8 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("/signal", func(w http.ResponseWriter, r *http.Request) {
+		h.logger.Info("pkg/api/build_handler.go /signal")
+
 		queries := r.URL.Query()
 		idStr := queries.Get("build_id")
 
@@ -97,21 +101,21 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 		var signalRequest SignalRequest
 		err := json.NewDecoder(r.Body).Decode(&signalRequest)
 		if err != nil {
-			h.logger.Error("/signal request JSON decode error", zap.Error(err))
+			h.logger.Error("pkg/api/build_handler.go /signal request JSON decode error", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		resp, err := h.service.SignalBuild(r.Context(), id, &signalRequest)
 		if err != nil {
-			h.logger.Error("/signal SignalBuild error", zap.Error(err))
+			h.logger.Error("pkg/api/build_handler.go /signal SignalBuild error", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		data, err := json.Marshal(resp)
 		if err != nil {
-			h.logger.Error("/signal JSON marshaling failed", zap.Error(err))
+			h.logger.Error("pkg/api/build_handler.go /signal JSON marshaling failed", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -121,7 +125,7 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 
 		_, err = w.Write(data)
 		if err != nil {
-			h.logger.Error("/signal server error")
+			h.logger.Error("pkg/api/build_handler.go /signal server error")
 			w.Write([]byte(err.Error()))
 		}
 	})

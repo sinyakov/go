@@ -64,6 +64,7 @@ func (c *Scheduler) LocateArtifact(id build.ID) (api.WorkerID, bool) {
 }
 
 func (c *Scheduler) RegisterWorker(workerID api.WorkerID) {
+	fmt.Println("pkg/scheduler/scheduler.go RegisterWorker", workerID)
 	if _, exists := c.workersMap[workerID]; exists {
 		return
 	}
@@ -113,18 +114,18 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 	// TODO: если есть воркер, у которого в кэше артифакты этого job.ID, добавляем к нем у в очередь и возвращаем pendingJob
 
 	go func() {
-		fmt.Println("gooo")
+		fmt.Println("ScheduleJob start gourutine")
 		select {
 		// case <-c.workerRegistered:
 		// c.scheduledJobsQueue <- job.ID
 		case <-timeAfter(c.config.CacheTimeout):
-			fmt.Println("CacheTimeout")
+			fmt.Println("ScheduleJob select CacheTimeout")
 			c.scheduledJobsQueue <- job.ID
 		case <-timeAfter(c.config.DepsTimeout):
-			fmt.Println("DepsTimeout")
+			fmt.Println("ScheduleJob select DepsTimeout")
 			c.scheduledJobsQueue <- job.ID
 		default:
-			fmt.Println("default")
+			fmt.Println("ScheduleJob select default, job:", job)
 			c.scheduledJobsQueue <- job.ID
 		}
 	}()
@@ -133,9 +134,14 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 }
 
 func (c *Scheduler) PickJob(ctx context.Context, workerID api.WorkerID) *PendingJob {
+	c.logger.Info("pkg/scheduler/scheduler.go PickJob", zap.String("workerID", workerID.String()))
 	// PickJob - блокируется. ScheduleJob - нет.
 
-	queues := c.workersMap[workerID]
+	queues, exists := c.workersMap[workerID]
+	if !exists {
+		c.RegisterWorker(workerID)
+		queues = c.workersMap[workerID]
+	}
 	// fmt.Println(len(c.scheduledJobsQueue))
 	// fmt.Println(len(queues.queue1))
 	// fmt.Println(len(queues.queue2))

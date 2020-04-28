@@ -23,10 +23,11 @@ func NewHeartbeatHandler(l *zap.Logger, s HeartbeatService) *HeartbeatHandler {
 
 func (h *HeartbeatHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		h.logger.Info("pkg/api/heartbeat_handler.go /heartbeat")
 		var heartbeatRequest HeartbeatRequest
 		err := json.NewDecoder(r.Body).Decode(&heartbeatRequest)
 		if err != nil {
-			h.logger.Error("/heartbeat body parse", zap.Error(err))
+			h.logger.Error("pkg/api/heartbeat_handler.go /heartbeat body parse", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -39,7 +40,7 @@ func (h *HeartbeatHandler) Register(mux *http.ServeMux) {
 
 		data, err := json.Marshal(resp)
 		if err != nil {
-			h.logger.Error("/heartbeat JSON marshaling failed", zap.Error(err))
+			h.logger.Error("pkg/api/heartbeat_handler.go /heartbeat JSON marshaling failed", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

@@ -25,6 +25,7 @@ func NewHandler(l *zap.Logger, c *Cache) *Handler {
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/artifact", func(w http.ResponseWriter, r *http.Request) {
+		h.logger.Info("pkg/artifact/handler.go /artifact")
 		queries := r.URL.Query()
 		idStr := queries.Get("id")
 

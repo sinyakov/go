@@ -53,21 +53,22 @@ func NewBuildClient(l *zap.Logger, endpoint string) *BuildClient {
 }
 
 func (c *BuildClient) StartBuild(ctx context.Context, request *BuildRequest) (*BuildStarted, StatusReader, error) {
-	c.logger.Info("start build")
+	c.logger.Info("pkg/api/build_client.go StartBuild start")
 
 	httpClient := &http.Client{}
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(request)
 
+	// fmt.Println(">>>>1", b.String())
 	req, err := http.NewRequest(http.MethodPost, c.endpoint+"/build", b)
 	if err != nil {
-		c.logger.Error("StartBuild request", zap.Error(err))
+		c.logger.Error("pkg/api/build_client.go StartBuild request", zap.Error(err))
 		return nil, nil, err
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.logger.Error("StartBuild do request", zap.Error(err))
+		c.logger.Error("pkg/api/build_client.go StartBuild do request", zap.Error(err))
 		return nil, nil, err
 	}
 
@@ -88,7 +89,7 @@ func (c *BuildClient) StartBuild(ctx context.Context, request *BuildRequest) (*B
 }
 
 func (c *BuildClient) SignalBuild(ctx context.Context, buildID build.ID, signal *SignalRequest) (*SignalResponse, error) {
-	c.logger.Info("signal build", zap.String("buildId", buildID.String()))
+	c.logger.Info("pkg/api/build_client.go SignalBuild start", zap.String("buildId", buildID.String()))
 
 	url := c.endpoint + "/signal?build_id=" + buildID.String()
 	httpClient := &http.Client{}
@@ -98,13 +99,13 @@ func (c *BuildClient) SignalBuild(ctx context.Context, buildID build.ID, signal 
 
 	req, err := http.NewRequest(http.MethodPost, url, b)
 	if err != nil {
-		c.logger.Error("SignalBuild request", zap.Error(err))
+		c.logger.Error("pkg/api/build_client.go SignalBuild request", zap.Error(err))
 		return nil, err
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.logger.Error("SignalBuild do request", zap.Error(err))
+		c.logger.Error("pkg/api/build_client.go SignalBuild do request", zap.Error(err))
 		return nil, err
 	}
 
@@ -119,7 +120,7 @@ func (c *BuildClient) SignalBuild(ctx context.Context, buildID build.ID, signal 
 	var signalResponse SignalResponse
 	err = json.NewDecoder(resp.Body).Decode(&signalResponse)
 	if err != nil {
-		c.logger.Error("SignalBuild body parse", zap.Error(err))
+		c.logger.Error("pkg/api/build_client.go SignalBuild body parse", zap.Error(err))
 		return nil, err
 	}
 	return &signalResponse, nil

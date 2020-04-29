@@ -48,10 +48,12 @@ func (w *Worker) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 func (w *Worker) Run(ctx context.Context) error {
 	w.logger.Info("pkg/worker/worker.go Run")
 	heartbeatClient := api.NewHeartbeatClient(w.logger, w.coordinatorEndpoint)
-
+	var finishedJob []api.JobResult
 	for {
+		fmt.Println("finishedJob", finishedJob)
 		resp, err := heartbeatClient.Heartbeat(ctx, &api.HeartbeatRequest{
-			WorkerID: w.workerID,
+			WorkerID:    w.workerID,
+			FinishedJob: finishedJob,
 		})
 
 		if errors.Is(err, context.Canceled) {
@@ -66,6 +68,7 @@ func (w *Worker) Run(ctx context.Context) error {
 
 		fmt.Println("pkg/worker/worker.go Run HeartbeatResponse, JobsToRun")
 
+		finishedJob = []api.JobResult{}
 		for _, jobSpec := range resp.JobsToRun {
 			// spew.Dump(jobID, jobSpec.Cmds)
 			for _, cmdWithArgs := range jobSpec.Cmds {
@@ -75,7 +78,23 @@ func (w *Worker) Run(ctx context.Context) error {
 				var stderr bytes.Buffer
 				cmd.Stdout = &stdout
 				cmd.Stderr = &stderr
-				cmd.Run()
+				err := cmd.Run()
+				var errStr *string
+				exitCode := 0
+				if exitError, ok := err.(*exec.ExitError); ok {
+					exitCode = exitError.ExitCode()
+				}
+				if err != nil {
+					str := err.Error()
+					errStr = &str
+				}
+				finishedJob = append(finishedJob, api.JobResult{
+					ID:       jobSpec.ID,
+					Stdout:   stdout.Bytes(),
+					Stderr:   stderr.Bytes(),
+					ExitCode: exitCode,
+					Error:    errStr,
+				})
 			}
 		}
 	}

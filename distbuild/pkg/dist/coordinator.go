@@ -3,8 +3,7 @@
 package dist
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"net/http"
 	"time"
 
@@ -18,10 +17,70 @@ import (
 	"gitlab.com/slon/shad-go/distbuild/pkg/scheduler"
 )
 
+type BuildService struct {
+	logger    *zap.Logger
+	fileCache *filecache.Cache
+	scheduler *scheduler.Scheduler
+}
+
+func NewBuildService(logger *zap.Logger,
+	fileCache *filecache.Cache,
+	scheduler *scheduler.Scheduler) *BuildService {
+	return &BuildService{
+		logger:    logger,
+		fileCache: fileCache,
+		scheduler: scheduler,
+	}
+}
+
+func (svc *BuildService) StartBuild(ctx context.Context, request *api.BuildRequest, w api.StatusWriter) error {
+	svc.logger.Info("pkg/dist/coordinator.go StartBuild")
+
+	// TODO: цикл?
+	jobSpec := api.JobSpec{
+		Job:         request.Graph.Jobs[0],
+		SourceFiles: request.Graph.SourceFiles,
+	}
+
+	pendingJob := svc.scheduler.ScheduleJob(&jobSpec)
+
+	buildStarted := &api.BuildStarted{
+		ID: pendingJob.Job.ID,
+	}
+
+	w.Started(buildStarted)
+
+	return nil
+}
+
+func (svc *BuildService) SignalBuild(ctx context.Context, buildID build.ID, signal *api.SignalRequest) (*api.SignalResponse, error) {
+	svc.logger.Info("pkg/dist/coordinator.go SignalBuild")
+
+	return &api.SignalResponse{}, nil
+}
+
+func (svc *BuildService) Heartbeat(ctx context.Context, req *api.HeartbeatRequest) (*api.HeartbeatResponse, error) {
+	svc.logger.Info("pkg/dist/coordinator.go Heartbeat")
+	println("!!! HeartbeatRequest")
+	spew.Dump(req)
+	for _, jobResult := range req.FinishedJob {
+		svc.scheduler.OnJobComplete(req.WorkerID, jobResult.ID, &jobResult)
+	}
+
+	pendingJob := svc.scheduler.PickJob(ctx, req.WorkerID)
+	jobsToRun := make(map[build.ID]api.JobSpec)
+	jobsToRun[pendingJob.Job.ID] = *pendingJob.Job
+
+	return &api.HeartbeatResponse{
+		JobsToRun: jobsToRun,
+	}, nil
+}
+
 type Coordinator struct {
 	logger    *zap.Logger
 	fileCache *filecache.Cache
 	scheduler *scheduler.Scheduler
+	mux       *http.ServeMux
 }
 
 var defaultConfig = scheduler.Config{
@@ -33,92 +92,25 @@ func NewCoordinator(
 	log *zap.Logger,
 	fileCache *filecache.Cache,
 ) *Coordinator {
+	schedulerSvc := scheduler.NewScheduler(log, defaultConfig)
+	buildSvc := NewBuildService(log, fileCache, schedulerSvc)
+	mux := http.NewServeMux()
+	// buildHandler *api.BuildHandler
+	// heartbeatHandler *api.HeartbeatHandler
+
+	buildHandler := api.NewBuildService(log, buildSvc)
+	buildHandler.Register(mux)
+	heartbeatHandler := api.NewHeartbeatHandler(log, buildSvc)
+	heartbeatHandler.Register(mux)
+
 	return &Coordinator{
 		logger:    log,
 		fileCache: fileCache,
-		scheduler: scheduler.NewScheduler(log, defaultConfig),
+		scheduler: schedulerSvc,
+		mux:       mux,
 	}
 }
 
 func (c *Coordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.RequestURI == "/coordinator/build" {
-		c.StartBuild(w, r)
-	}
-
-	if r.RequestURI == "/coordinator/heartbeat" {
-		c.Heartbeat(w, r)
-	}
-}
-
-func (c *Coordinator) StartBuild(w http.ResponseWriter, r *http.Request) {
-	c.logger.Info("pkg/dist/coordinator.go ServeHTTP", zap.String("RequestURI", r.RequestURI))
-	var buildRequest api.BuildRequest
-
-	err := json.NewDecoder(r.Body).Decode(&buildRequest)
-	if err != nil {
-		c.logger.Error("pkg/dist/coordinator.go StartBuildDecode", zap.String("RequestURI", r.RequestURI))
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Println("pkg/dist/coordinator.go StartBuild buildRequest")
-	// spew.Dump(buildRequest)
-
-	// TODO: цикл?
-	jobSpec := api.JobSpec{
-		Job:         buildRequest.Graph.Jobs[0],
-		SourceFiles: buildRequest.Graph.SourceFiles,
-	}
-
-	pendingJob := c.scheduler.ScheduleJob(&jobSpec)
-
-	data, err := json.Marshal(api.BuildStarted{
-		ID: pendingJob.Job.ID,
-		// MissingFiles
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
-
-	// fmt.Println("pkg/dist/coordinator.go StartBuild pendingJob")
-	// spew.Dump(pendingJob)
-}
-
-func (c *Coordinator) Heartbeat(w http.ResponseWriter, r *http.Request) {
-	c.logger.Info("pkg/dist/coordinator.go ServeHTTP", zap.String("RequestURI", r.RequestURI))
-	var heartbeatRequest api.HeartbeatRequest
-
-	err := json.NewDecoder(r.Body).Decode(&heartbeatRequest)
-	if err != nil {
-		c.logger.Info("pkg/dist/coordinator.go Heartbeat Decode", zap.String("RequestURI", r.RequestURI))
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Println("pkg/dist/coordinator.go heartbeatRequest")
-	spew.Dump(heartbeatRequest)
-
-	pendingJob := c.scheduler.PickJob(r.Context(), heartbeatRequest.WorkerID)
-	JobsToRun := make(map[build.ID]api.JobSpec)
-	JobsToRun[pendingJob.Job.ID] = *pendingJob.Job
-	data, err := json.Marshal(api.HeartbeatResponse{
-		JobsToRun: JobsToRun,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
-
-	// fmt.Println("pkg/dist/coordinator.go pendingJob")
-	// spew.Dump(pendingJob)
-
+	c.mux.ServeHTTP(w, r)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
 
@@ -58,20 +59,29 @@ func (c *Client) Build(ctx context.Context, graph build.Graph, lsn BuildListener
 	// return nil
 
 	for {
+		time.Sleep(time.Millisecond * 500)
+		fmt.Println("statusReader 1")
 		statusUpdate, err := statusReader.Next()
+		fmt.Println("statusReader 2")
+
 		// TODO: HACK
 		if errors.Is(err, io.EOF) {
-			return nil
+			continue
 		}
+		fmt.Println("statusReader 3")
+
 		if err != nil {
 			return err
 		}
+		fmt.Println("statusReader 4")
 		// fmt.Println("pkg/client/build.go statusUpdate")
 		// spew.Dump(statusUpdate)
 		if statusUpdate.JobFinished != nil {
+			fmt.Println("statusReader 5")
 			lsn.OnJobFinished(statusUpdate.JobFinished.ID)
 			fmt.Println("OnJobFinished")
 			return nil
 		}
+		fmt.Println("statusReader 6")
 	}
 }

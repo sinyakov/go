@@ -51,7 +51,9 @@ func (sw *statusWriter) Started(rsp *BuildStarted) error {
 
 func (sw *statusWriter) Updated(update *StatusUpdate) error {
 	err := json.NewEncoder(sw.w).Encode(update)
-	sw.flusher.Flush()
+	if sw.flusher != nil {
+		sw.flusher.Flush()
+	}
 	return err
 }
 
@@ -69,7 +71,9 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 
 		stWriter := NewStatusWriter(w)
 
+		h.logger.Info("pkg/api/build_handler.go /build h.service.StartBuild started")
 		err = h.service.StartBuild(r.Context(), &buildRequest, stWriter)
+		h.logger.Info("pkg/api/build_handler.go /build h.service.StartBuild completed")
 		if err != nil {
 			h.logger.Error("pkg/api/build_handler.go /build error", zap.Error(err))
 			if !stWriter.isHeaderWrited {

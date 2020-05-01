@@ -7,13 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os/exec"
+
+	"github.com/davecgh/go-spew/spew"
 
 	"go.uber.org/zap"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
 	"gitlab.com/slon/shad-go/distbuild/pkg/artifact"
+	"gitlab.com/slon/shad-go/distbuild/pkg/build"
 	"gitlab.com/slon/shad-go/distbuild/pkg/filecache"
 )
 
@@ -71,31 +75,56 @@ func (w *Worker) Run(ctx context.Context) error {
 		finishedJob = []api.JobResult{}
 		for _, jobSpec := range resp.JobsToRun {
 			// spew.Dump(jobID, jobSpec.Cmds)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			exitCode := 0
+			var errStr *string = nil
+
 			for _, cmdWithArgs := range jobSpec.Cmds {
-				fmt.Println(cmdWithArgs.Exec)
-				cmd := exec.Command(cmdWithArgs.Exec[0], cmdWithArgs.Exec[1:]...)
-				var stdout bytes.Buffer
-				var stderr bytes.Buffer
-				cmd.Stdout = &stdout
-				cmd.Stderr = &stderr
-				err := cmd.Run()
-				var errStr *string
-				exitCode := 0
-				if exitError, ok := err.(*exec.ExitError); ok {
-					exitCode = exitError.ExitCode()
-				}
+				renderedCmd, err := cmdWithArgs.Render(build.JobContext{
+					SourceDir: "",
+					OutputDir: "",
+					Deps:      nil,
+				})
 				if err != nil {
+					// TODO
+				}
+				spew.Dump(jobSpec)
+
+				if len(renderedCmd.Exec) > 0 {
+					cmd := exec.Command(renderedCmd.Exec[0], renderedCmd.Exec[1:]...)
+					cmd.Stdout = &stdout
+					cmd.Stderr = &stderr
+					err := cmd.Run()
+					if err == nil {
+						continue
+					}
+					if exitError, ok := err.(*exec.ExitError); ok {
+						exitCode = exitError.ExitCode()
+					}
 					str := err.Error()
 					errStr = &str
+					break
 				}
-				finishedJob = append(finishedJob, api.JobResult{
-					ID:       jobSpec.ID,
-					Stdout:   stdout.Bytes(),
-					Stderr:   stderr.Bytes(),
-					ExitCode: exitCode,
-					Error:    errStr,
-				})
+				if renderedCmd.CatOutput != "" {
+					err := ioutil.WriteFile(renderedCmd.CatOutput, []byte(renderedCmd.CatTemplate), 0666)
+					if err == nil {
+						continue
+					}
+					str := err.Error()
+					errStr = &str
+					break
+				}
 			}
+			jobResult := api.JobResult{
+				ID:       jobSpec.ID,
+				Stdout:   stdout.Bytes(),
+				Stderr:   stderr.Bytes(),
+				ExitCode: exitCode,
+				Error:    errStr,
+			}
+			finishedJob = append(finishedJob, jobResult)
 		}
 	}
 }

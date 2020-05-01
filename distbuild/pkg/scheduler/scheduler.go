@@ -79,15 +79,18 @@ func (c *Scheduler) RegisterWorker(workerID api.WorkerID) {
 }
 
 func (c *Scheduler) OnJobComplete(workerID api.WorkerID, jobID build.ID, res *api.JobResult) bool {
+	fmt.Printf("Scheduler OnJobComplete started\n")
 	c.scheduledJobsMutex.Lock()
 	defer c.scheduledJobsMutex.Unlock()
 
 	scheduledJob, exists := c.scheduledJobsMap[jobID]
 	if !exists {
+		fmt.Printf("Scheduler OnJobComplete started: job not exists\n")
 		return false
 	}
 
 	scheduledJob.pendingJob.Result = res
+	fmt.Printf("Scheduler OnJobComplete started: channel closed\n")
 	close(scheduledJob.pendingJob.Finished)
 
 	return true
@@ -128,6 +131,7 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 			fmt.Println("ScheduleJob select default, job:", job)
 			c.scheduledJobsQueue <- job.ID
 		}
+		fmt.Println("ScheduleJob goroutine exited")
 	}()
 
 	return pendingJob

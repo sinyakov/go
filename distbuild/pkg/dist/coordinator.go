@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
-
 	"go.uber.org/zap"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
@@ -18,18 +16,20 @@ import (
 )
 
 type BuildService struct {
-	logger    *zap.Logger
-	fileCache *filecache.Cache
-	scheduler *scheduler.Scheduler
+	logger      *zap.Logger
+	fileCache   *filecache.Cache
+	scheduler   *scheduler.Scheduler
+	jobsWriters map[build.ID]api.StatusWriter // ADDED
 }
 
 func NewBuildService(logger *zap.Logger,
 	fileCache *filecache.Cache,
 	scheduler *scheduler.Scheduler) *BuildService {
 	return &BuildService{
-		logger:    logger,
-		fileCache: fileCache,
-		scheduler: scheduler,
+		logger:      logger,
+		fileCache:   fileCache,
+		scheduler:   scheduler,
+		jobsWriters: make(map[build.ID]api.StatusWriter), // ADDED
 	}
 }
 
@@ -43,12 +43,16 @@ func (svc *BuildService) StartBuild(ctx context.Context, request *api.BuildReque
 	}
 
 	pendingJob := svc.scheduler.ScheduleJob(&jobSpec)
+	svc.jobsWriters[pendingJob.Job.ID] = w // ADDED, TODO: lock
 
 	buildStarted := &api.BuildStarted{
 		ID: pendingJob.Job.ID,
 	}
 
 	w.Started(buildStarted)
+	svc.logger.Info("pkg/dist/coordinator.go StartBuild started, locked")         // ADDED
+	<-pendingJob.Finished                                                         // ADDED
+	svc.logger.Info("pkg/dist/coordinator.go StartBuild started, channel closed") // ADDED
 
 	return nil
 }
@@ -61,15 +65,21 @@ func (svc *BuildService) SignalBuild(ctx context.Context, buildID build.ID, sign
 
 func (svc *BuildService) Heartbeat(ctx context.Context, req *api.HeartbeatRequest) (*api.HeartbeatResponse, error) {
 	svc.logger.Info("pkg/dist/coordinator.go Heartbeat")
-	println("!!! HeartbeatRequest")
-	spew.Dump(req)
+	// println("!!! HeartbeatRequest")
+	// spew.Dump(req)
 	for _, jobResult := range req.FinishedJob {
-		svc.scheduler.OnJobComplete(req.WorkerID, jobResult.ID, &jobResult)
+		statusWriter := svc.jobsWriters[jobResult.ID] // ADDED TODO: lock, exists check
+		statusWriter.Updated(&api.StatusUpdate{       // ADDED
+			JobFinished: &jobResult,
+		})
+		svc.scheduler.OnJobComplete(req.WorkerID, jobResult.ID, &jobResult) // ADDED (moved)
 	}
 
 	pendingJob := svc.scheduler.PickJob(ctx, req.WorkerID)
 	jobsToRun := make(map[build.ID]api.JobSpec)
-	jobsToRun[pendingJob.Job.ID] = *pendingJob.Job
+	if pendingJob != nil { // ADDED
+		jobsToRun[pendingJob.Job.ID] = *pendingJob.Job
+	}
 
 	return &api.HeartbeatResponse{
 		JobsToRun: jobsToRun,

@@ -40,7 +40,7 @@ func (c *HeartbeatClient) Heartbeat(ctx context.Context, heartbeatReq *Heartbeat
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.logger.Error("pkg/api/heartbeat_client.go Heartbeat do request", zap.Error(err))
+		c.logger.Info("pkg/api/heartbeat_client.go Heartbeat do request", zap.Error(err))
 		return nil, err
 	}
 

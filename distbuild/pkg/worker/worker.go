@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"os/exec"
 
-	"github.com/davecgh/go-spew/spew"
-
 	"go.uber.org/zap"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
@@ -90,7 +88,7 @@ func (w *Worker) Run(ctx context.Context) error {
 				if err != nil {
 					// TODO
 				}
-				spew.Dump(jobSpec)
+				// spew.Dump(jobSpec)
 
 				if len(renderedCmd.Exec) > 0 {
 					cmd := exec.Command(renderedCmd.Exec[0], renderedCmd.Exec[1:]...)

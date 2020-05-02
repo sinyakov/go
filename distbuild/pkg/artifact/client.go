@@ -26,10 +26,17 @@ func Download(ctx context.Context, endpoint string, c *Cache, artifactID build.I
 
 	err = tarstream.Receive(path, resp.Body)
 	if err != nil {
-		abort()
+		errAbort := abort()
+		if errAbort != nil {
+			return errAbort
+		}
 		return err
 	}
 
-	commit()
+	errCommit := commit()
+	if errCommit != nil {
+		return errCommit
+	}
+
 	return nil
 }

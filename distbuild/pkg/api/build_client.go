@@ -20,7 +20,7 @@ type statusReader struct {
 	body io.ReadCloser
 }
 
-func NewStatusReader(body io.ReadCloser) *statusReader {
+func NewStatusReader(body io.ReadCloser) StatusReader {
 	return &statusReader{
 		body: body,
 	}
@@ -57,7 +57,10 @@ func (c *BuildClient) StartBuild(ctx context.Context, request *BuildRequest) (*B
 
 	httpClient := &http.Client{}
 	b := new(bytes.Buffer)
-	json.NewEncoder(b).Encode(request)
+	err := json.NewEncoder(b).Encode(request)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// fmt.Println(">>>>1", b.String())
 	req, err := http.NewRequest(http.MethodPost, c.endpoint+"/build", b)
@@ -73,9 +76,9 @@ func (c *BuildClient) StartBuild(ctx context.Context, request *BuildRequest) (*B
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, nil, err
+		msg, errRespRead := ioutil.ReadAll(resp.Body)
+		if errRespRead != nil {
+			return nil, nil, errRespRead
 		}
 		resp.Body.Close()
 		return nil, nil, errors.New(string(msg))
@@ -84,6 +87,9 @@ func (c *BuildClient) StartBuild(ctx context.Context, request *BuildRequest) (*B
 	var buildStarted BuildStarted
 	decoder := json.NewDecoder(resp.Body)
 	err = decoder.Decode(&buildStarted)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return &buildStarted, NewStatusReader(resp.Body), nil
 }
@@ -95,7 +101,10 @@ func (c *BuildClient) SignalBuild(ctx context.Context, buildID build.ID, signal 
 	httpClient := &http.Client{}
 
 	b := new(bytes.Buffer)
-	json.NewEncoder(b).Encode(signal)
+	err := json.NewEncoder(b).Encode(signal)
+	if err != nil {
+		return nil, err
+	}
 
 	req, err := http.NewRequest(http.MethodPost, url, b)
 	if err != nil {
@@ -110,9 +119,9 @@ func (c *BuildClient) SignalBuild(ctx context.Context, buildID build.ID, signal 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := ioutil.ReadAll(resp.Body)
+		msg, errRespRead := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return nil, err
+			return nil, errRespRead
 		}
 		return nil, errors.New(string(msg))
 	}

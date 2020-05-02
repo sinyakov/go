@@ -35,7 +35,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		}
 
 		var id build.ID
-		id.UnmarshalText([]byte(idStr))
+		err := id.UnmarshalText([]byte(idStr))
+		if err != nil {
+			return
+		}
 
 		path, unlock, err := h.cache.Get(id)
 		if err != nil {

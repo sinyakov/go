@@ -34,7 +34,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		}
 
 		var id build.ID
-		id.UnmarshalText([]byte(idStr))
+		err := id.UnmarshalText([]byte(idStr))
+		if err != nil {
+			return
+		}
 
 		if r.Method == "GET" {
 			h.ServeGetFile(w, r, id)
@@ -75,7 +78,10 @@ func (h *Handler) ServePutFile(w http.ResponseWriter, r *http.Request, id build.
 	_, err = io.Copy(wc, r.Body)
 
 	if err != nil {
-		abort()
+		errAbort := abort()
+		if errAbort != nil {
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -84,5 +90,8 @@ func (h *Handler) ServePutFile(w http.ResponseWriter, r *http.Request, id build.
 
 	w.Header().Set("Content-Type", "plain/text")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	_, err = w.Write([]byte("OK"))
+	if err != nil {
+		return
+	}
 }

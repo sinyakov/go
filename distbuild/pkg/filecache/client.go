@@ -64,7 +64,10 @@ func (c *Client) Download(ctx context.Context, localCache *Cache, id build.ID) e
 
 	_, _ = io.Copy(w, resp.Body)
 	if err != nil {
-		abort()
+		errAbort := abort()
+		if errAbort != nil {
+			return errAbort
+		}
 		return err
 	}
 

@@ -19,7 +19,7 @@ var (
 	ErrReadLocked  = errors.New("artifact is locked for read")
 )
 
-type ArtifactCache struct {
+type locker struct {
 	// mu          *sync.RWMutex
 	readLocked  bool
 	writeLocked bool
@@ -28,14 +28,14 @@ type ArtifactCache struct {
 type Cache struct {
 	rootDir        string
 	artifactsMutex *sync.Mutex
-	artifacts      map[build.ID]*ArtifactCache
+	artifacts      map[build.ID]*locker
 }
 
 func NewCache(root string) (*Cache, error) {
 	return &Cache{
 		rootDir:        root,
 		artifactsMutex: &sync.Mutex{},
-		artifacts:      make(map[build.ID]*ArtifactCache),
+		artifacts:      make(map[build.ID]*locker),
 	}, nil
 }
 func (c *Cache) Range(artifactFn func(artifact build.ID) error) error {
@@ -89,9 +89,9 @@ func (c *Cache) Create(artifact build.ID) (path string, commit, abort func() err
 	c.artifactsMutex.Lock()
 	defer c.artifactsMutex.Unlock()
 
-	currentArtifactCache, exists := c.artifacts[artifact]
+	currentlocker, exists := c.artifacts[artifact]
 	if exists {
-		if currentArtifactCache.writeLocked {
+		if currentlocker.writeLocked {
 			return "", nil, nil, ErrWriteLocked
 		}
 		return "", nil, nil, ErrExists
@@ -108,7 +108,7 @@ func (c *Cache) Create(artifact build.ID) (path string, commit, abort func() err
 	// 	return "", nil, nil, err
 	// }
 
-	artifactCache := &ArtifactCache{
+	artifactCache := &locker{
 		// mu:          &sync.RWMutex{},
 		readLocked:  false,
 		writeLocked: true,
@@ -169,7 +169,7 @@ func (c *Cache) Get(artifact build.ID) (path string, unlock func(), err error) {
 			return "", nil, ErrReadLocked
 		}
 	} else {
-		c.artifacts[artifact] = &ArtifactCache{}
+		c.artifacts[artifact] = &locker{}
 	}
 	c.artifacts[artifact].readLocked = true
 

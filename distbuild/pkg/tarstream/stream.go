@@ -31,6 +31,9 @@ func Send(dir string, w io.Writer) error {
 		}
 
 		hdr, err := tar.FileInfoHeader(info, info.Name())
+		if err != nil {
+			return err
+		}
 		hdr.Name = filename
 
 		if err := tw.WriteHeader(hdr); err != nil {

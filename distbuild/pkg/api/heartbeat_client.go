@@ -30,7 +30,10 @@ func (c *HeartbeatClient) Heartbeat(ctx context.Context, heartbeatReq *Heartbeat
 
 	httpClient := &http.Client{}
 	b := new(bytes.Buffer)
-	json.NewEncoder(b).Encode(heartbeatReq)
+	err := json.NewEncoder(b).Encode(heartbeatReq)
+	if err != nil {
+		return nil, err
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/heartbeat", b)
 	if err != nil {
@@ -45,9 +48,9 @@ func (c *HeartbeatClient) Heartbeat(ctx context.Context, heartbeatReq *Heartbeat
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
+		msg, errRead := ioutil.ReadAll(resp.Body)
+		if errRead != nil {
+			return nil, errRead
 		}
 		return nil, errors.New(string(msg))
 	}

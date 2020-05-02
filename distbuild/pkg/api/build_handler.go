@@ -22,23 +22,23 @@ type BuildHandler struct {
 	service Service
 }
 
-type statusWriter struct {
+type StatusWriterImpl struct {
 	w              http.ResponseWriter
 	flusher        http.Flusher
 	isHeaderWrited bool
 }
 
-func NewStatusWriter(w http.ResponseWriter) *statusWriter {
+func NewStatusWriter(w http.ResponseWriter) *StatusWriterImpl {
 	f := w.(http.Flusher)
 
-	return &statusWriter{
+	return &StatusWriterImpl{
 		w:              w,
 		flusher:        f,
 		isHeaderWrited: false,
 	}
 }
 
-func (sw *statusWriter) Started(rsp *BuildStarted) error {
+func (sw *StatusWriterImpl) Started(rsp *BuildStarted) error {
 	if !sw.isHeaderWrited {
 		sw.w.Header().Set("Content-Type", "application/json")
 		sw.w.WriteHeader(http.StatusOK)
@@ -49,7 +49,7 @@ func (sw *statusWriter) Started(rsp *BuildStarted) error {
 	return err
 }
 
-func (sw *statusWriter) Updated(update *StatusUpdate) error {
+func (sw *StatusWriterImpl) Updated(update *StatusUpdate) error {
 	err := json.NewEncoder(sw.w).Encode(update)
 	if sw.flusher != nil {
 		sw.flusher.Flush()
@@ -79,11 +79,14 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 			if !stWriter.isHeaderWrited {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			} else {
-				stWriter.Updated(&StatusUpdate{
+				errWriter := stWriter.Updated(&StatusUpdate{
 					BuildFailed: &BuildFailed{
 						Error: err.Error(),
 					},
 				})
+				if errWriter != nil {
+					return
+				}
 			}
 		}
 	})
@@ -100,10 +103,12 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 		}
 
 		var id build.ID
-		id.UnmarshalText([]byte(idStr))
-
+		err := id.UnmarshalText([]byte(idStr))
+		if err != nil {
+			return
+		}
 		var signalRequest SignalRequest
-		err := json.NewDecoder(r.Body).Decode(&signalRequest)
+		err = json.NewDecoder(r.Body).Decode(&signalRequest)
 		if err != nil {
 			h.logger.Error("pkg/api/build_handler.go /signal request JSON decode error", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -130,7 +135,10 @@ func (h *BuildHandler) Register(mux *http.ServeMux) {
 		_, err = w.Write(data)
 		if err != nil {
 			h.logger.Error("pkg/api/build_handler.go /signal server error")
-			w.Write([]byte(err.Error()))
+			_, errWrite := w.Write([]byte(err.Error()))
+			if errWrite != nil {
+				return
+			}
 		}
 	})
 }

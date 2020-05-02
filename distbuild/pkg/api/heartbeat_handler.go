@@ -51,7 +51,10 @@ func (h *HeartbeatHandler) Register(mux *http.ServeMux) {
 		_, err = w.Write(data)
 		if err != nil {
 			h.logger.Error("/heartbeat server error")
-			w.Write([]byte(err.Error()))
+			_, errWrite := w.Write([]byte(err.Error()))
+			if errWrite != nil {
+				return
+			}
 		}
 	})
 }

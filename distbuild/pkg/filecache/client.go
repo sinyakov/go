@@ -4,7 +4,9 @@ package filecache
 
 import (
 	"context"
+	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 
@@ -41,10 +43,20 @@ func (c *Client) Upload(ctx context.Context, id build.ID, localPath string) erro
 		return err
 	}
 
-	_, err = httpClient.Do(req)
+	resp, err := httpClient.Do(req)
+
 	if err != nil {
 		c.logger.Error("Filecache Upload file error")
 		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return errors.New("UPLOAD " + string(b))
 	}
 
 	return nil
@@ -56,6 +68,14 @@ func (c *Client) Download(ctx context.Context, localCache *Cache, id build.ID) e
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return errors.New("DOWNLOAD " + string(b))
+	}
 
 	w, abort, err := localCache.Write(id)
 	if err != nil {

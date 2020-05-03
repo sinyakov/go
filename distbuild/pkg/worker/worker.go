@@ -7,10 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
+	gopath "path"
+	"path/filepath"
 
+	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
@@ -25,6 +30,7 @@ type Worker struct {
 	logger              *zap.Logger
 	fileCache           *filecache.Cache
 	artifacts           *artifact.Cache
+	filecacheClient     *filecache.Client
 }
 
 func New(
@@ -40,6 +46,7 @@ func New(
 		logger:              log,
 		fileCache:           fileCache,
 		artifacts:           artifacts,
+		filecacheClient:     filecache.NewClient(log, coordinatorEndpoint),
 	}
 }
 
@@ -47,7 +54,28 @@ func (w *Worker) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	w.logger.Info("pkg/worker/worker.go ServeHTTP")
 }
 
+func CopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+	return out.Close()
+}
+
 func (w *Worker) Run(ctx context.Context) error {
+	// TODO: сохранять результаты работы
 	w.logger.Info("pkg/worker/worker.go Run")
 	heartbeatClient := api.NewHeartbeatClient(w.logger, w.coordinatorEndpoint)
 	var finishedJob []api.JobResult
@@ -72,7 +100,32 @@ func (w *Worker) Run(ctx context.Context) error {
 
 		finishedJob = []api.JobResult{}
 		for _, jobSpec := range resp.JobsToRun {
-			// spew.Dump(jobID, jobSpec.Cmds)
+			tmpSourceDir := os.TempDir()
+
+			for fileID, fileNameWithPath := range jobSpec.SourceFiles {
+				path, unlock, err := w.fileCache.Get(fileID)
+				if err == nil {
+					unlock()
+					continue
+				}
+				err = w.filecacheClient.Download(ctx, w.fileCache, fileID)
+				if err != nil {
+					fmt.Println("Download", err)
+					return err
+				}
+				path, unlock, err = w.fileCache.Get(fileID)
+				if err != nil {
+					return err
+				}
+				filePath := gopath.Join(tmpSourceDir, fileNameWithPath)
+				dir, _ := filepath.Split(filePath)
+				if dir != "" {
+					_ = os.MkdirAll(dir, 0755)
+				}
+
+				CopyFile(path, filePath)
+				unlock()
+			}
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
@@ -81,14 +134,14 @@ func (w *Worker) Run(ctx context.Context) error {
 
 			for _, cmdWithArgs := range jobSpec.Cmds {
 				renderedCmd, err := cmdWithArgs.Render(build.JobContext{
-					SourceDir: "",
-					OutputDir: "",
-					Deps:      nil,
+					SourceDir: tmpSourceDir,
+					OutputDir: ".",
+					Deps:      nil, // TODO
 				})
 				if err != nil {
 					// TODO
 				}
-				// spew.Dump(jobSpec)
+				spew.Dump(renderedCmd)
 
 				if len(renderedCmd.Exec) > 0 {
 					cmd := exec.Command(renderedCmd.Exec[0], renderedCmd.Exec[1:]...)

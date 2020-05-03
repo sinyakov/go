@@ -43,11 +43,22 @@ func (svc *BuildService) StartBuild(ctx context.Context, request *api.BuildReque
 	}
 
 	pendingJob := svc.scheduler.ScheduleJob(&jobSpec)
-	svc.jobsWriters[pendingJob.Job.ID] = w // ADDED, TODO: lock
 
 	buildStarted := &api.BuildStarted{
-		ID: pendingJob.Job.ID,
+		ID:           pendingJob.Job.ID,
+		MissingFiles: svc.scheduler.GetMissingFiles(jobSpec.SourceFiles), // TODO
 	}
+
+	if pendingJob.Result != nil && pendingJob.Result.Error == nil {
+		// TODO: шедулить джобу, результаты кэша брать из ответа воркера
+		w.Started(buildStarted)
+		w.Updated(&api.StatusUpdate{
+			JobFinished: pendingJob.Result,
+		})
+		return nil
+	}
+
+	svc.jobsWriters[pendingJob.Job.ID] = w // ADDED, TODO: lock
 
 	w.Started(buildStarted)
 	svc.logger.Info("pkg/dist/coordinator.go StartBuild started, locked")         // ADDED
@@ -112,6 +123,8 @@ func NewCoordinator(
 	buildHandler.Register(mux)
 	heartbeatHandler := api.NewHeartbeatHandler(log, buildSvc)
 	heartbeatHandler.Register(mux)
+	filecacheHandler := filecache.NewHandler(log, fileCache)
+	filecacheHandler.Register(mux)
 
 	return &Coordinator{
 		logger:    log,

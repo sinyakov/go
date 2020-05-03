@@ -65,6 +65,17 @@ func (c *Scheduler) LocateArtifact(id build.ID) (api.WorkerID, bool) {
 	panic("implement me")
 }
 
+func (c *Scheduler) GetMissingFiles(sourceFiles map[build.ID]string) []build.ID {
+	ids := []build.ID{}
+
+	// TODO: пройтись по всем воркерам и посмотреть, что такого файла нет ни на одном воркере
+	for id := range sourceFiles {
+		ids = append(ids, id)
+	}
+
+	return ids
+}
+
 func (c *Scheduler) LocateWorkerWithDeps(deps []build.ID) (api.WorkerID, bool) {
 	for _, depID := range deps {
 		depJob, exists := c.scheduledJobsMap[depID]
@@ -129,7 +140,9 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 	defer c.scheduledJobsMutex.Unlock()
 
 	if scheduledJob, exists := c.scheduledJobsMap[job.ID]; exists {
-		fmt.Println("IF")
+		if scheduledJob.pendingJob.Result != nil && scheduledJob.pendingJob.Result.Error == nil {
+			return scheduledJob.pendingJob
+		}
 		c.scheduledJobsQueue <- job.ID
 		return scheduledJob.pendingJob
 	}

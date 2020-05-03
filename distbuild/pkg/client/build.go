@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	gopath "path"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
+	"gitlab.com/slon/shad-go/distbuild/pkg/filecache"
 
 	"go.uber.org/zap"
 
@@ -16,9 +18,10 @@ import (
 )
 
 type Client struct {
-	logger      *zap.Logger
-	apiEndpoint string
-	sourceDir   string
+	logger          *zap.Logger
+	apiEndpoint     string
+	sourceDir       string
+	filecacheClient *filecache.Client
 }
 
 func NewClient(
@@ -27,9 +30,10 @@ func NewClient(
 	sourceDir string,
 ) *Client {
 	return &Client{
-		logger:      l,
-		apiEndpoint: apiEndpoint,
-		sourceDir:   sourceDir,
+		logger:          l,
+		apiEndpoint:     apiEndpoint,
+		sourceDir:       sourceDir,
+		filecacheClient: filecache.NewClient(l, apiEndpoint),
 	}
 }
 
@@ -44,12 +48,24 @@ type BuildListener interface {
 func (c *Client) Build(ctx context.Context, graph build.Graph, lsn BuildListener) error {
 	c.logger.Info("pkg/client/build.go Build start")
 	buildClient := api.NewBuildClient(c.logger, c.apiEndpoint)
-	_, statusReader, err := buildClient.StartBuild(ctx, &api.BuildRequest{Graph: graph})
+	buildStarted, statusReader, err := buildClient.StartBuild(ctx, &api.BuildRequest{Graph: graph})
 	if err != nil {
 		c.logger.Error("pkg/client/build.go Build", zap.Error(err))
 		return err
 	}
 	defer statusReader.Close()
+
+	if len(buildStarted.MissingFiles) > 0 {
+		fmt.Println("buildStarted.MissingFiles", buildStarted.MissingFiles, c.sourceDir)
+		for _, fileID := range buildStarted.MissingFiles {
+			err := c.filecacheClient.Upload(ctx, fileID, gopath.Join(c.sourceDir, graph.SourceFiles[fileID]))
+			if err != nil {
+				c.logger.Error("pkg/client/build.go Build Upload", zap.Error(err))
+				return err
+			}
+		}
+	}
+
 	// TODO: заливка отсутствующих файлов
 	fmt.Println("pkg/client/build.go buildStarted")
 	// spew.Dump(buildStarted)

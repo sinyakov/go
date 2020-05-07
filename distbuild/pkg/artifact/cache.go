@@ -4,7 +4,6 @@ package artifact
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	gopath "path"
 	"sync"
@@ -100,8 +99,6 @@ func (c *Cache) Create(artifact build.ID) (path string, commit, abort func() err
 	filePath := gopath.Join(c.rootDir, artifact.Path())
 	_ = os.MkdirAll(filePath, 0755)
 
-	fmt.Println("Create", filePath)
-
 	// path = gopath.Join(c.rootDir, artifact.Path())
 	// err = os.MkdirAll(path, 0755)
 	// if err != nil {
@@ -151,7 +148,6 @@ func (c *Cache) Get(artifact build.ID) (path string, unlock func(), err error) {
 	defer c.artifactsMutex.Unlock()
 
 	filePath := gopath.Join(c.rootDir, artifact.Path())
-	fmt.Println("Get   ", filePath)
 
 	_, err = os.Stat(filePath)
 

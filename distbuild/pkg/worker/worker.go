@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -15,7 +14,6 @@ import (
 	gopath "path"
 	"path/filepath"
 
-	"github.com/davecgh/go-spew/spew"
 	"go.uber.org/zap"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/api"
@@ -31,6 +29,7 @@ type Worker struct {
 	fileCache           *filecache.Cache
 	artifacts           *artifact.Cache
 	filecacheClient     *filecache.Client
+	mux                 *http.ServeMux
 }
 
 func New(
@@ -40,6 +39,11 @@ func New(
 	fileCache *filecache.Cache,
 	artifacts *artifact.Cache,
 ) *Worker {
+	mux := http.NewServeMux()
+
+	artifactsHandler := artifact.NewHandler(log, artifacts)
+	artifactsHandler.Register(mux)
+
 	return &Worker{
 		workerID:            workerID,
 		coordinatorEndpoint: coordinatorEndpoint,
@@ -47,11 +51,13 @@ func New(
 		fileCache:           fileCache,
 		artifacts:           artifacts,
 		filecacheClient:     filecache.NewClient(log, coordinatorEndpoint),
+		mux:                 mux,
 	}
 }
 
 func (w *Worker) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	w.logger.Info("pkg/worker/worker.go ServeHTTP")
+	w.logger.Info("pkg/worker/worker.go ServeHTTP", zap.String("Request URI", r.RequestURI))
+	w.mux.ServeHTTP(rw, r)
 }
 
 func CopyFile(src, dst string) error {
@@ -80,7 +86,6 @@ func (w *Worker) Run(ctx context.Context) error {
 	heartbeatClient := api.NewHeartbeatClient(w.logger, w.coordinatorEndpoint)
 	var finishedJob []api.JobResult
 	for {
-		fmt.Println("finishedJob", finishedJob)
 		resp, err := heartbeatClient.Heartbeat(ctx, &api.HeartbeatRequest{
 			WorkerID:    w.workerID,
 			FinishedJob: finishedJob,
@@ -96,12 +101,30 @@ func (w *Worker) Run(ctx context.Context) error {
 			continue
 		}
 
-		fmt.Println("pkg/worker/worker.go Run HeartbeatResponse, JobsToRun")
-
 		finishedJob = []api.JobResult{}
+		// fmt.Println("resp.JobsToRun", len(resp.JobsToRun))
 		for _, jobSpec := range resp.JobsToRun {
-			tmpSourceDir := os.TempDir()
+			outputDir := gopath.Join(os.TempDir(), jobSpec.ID.String())
+			tmpSourceDir := gopath.Join(os.TempDir(), jobSpec.ID.String()+".tmp")
 
+			_ = os.MkdirAll(outputDir, 0755)
+			_ = os.MkdirAll(tmpSourceDir, 0755)
+
+			depsMap := map[build.ID]string{}
+			for artifactID, workerID := range jobSpec.Artifacts {
+				// fmt.Println(">>", string(workerID))
+				err := artifact.Download(ctx, string(workerID), w.artifacts, artifactID)
+				if err != nil {
+					// w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
+					// continue
+				}
+				artifactPath, unlockFn, err := w.artifacts.Get(artifactID)
+				if err != nil {
+					w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
+				}
+				depsMap[artifactID] = artifactPath
+				unlockFn()
+			}
 			for fileID, fileNameWithPath := range jobSpec.SourceFiles {
 				path, unlock, err := w.fileCache.Get(fileID)
 				if err == nil {
@@ -110,7 +133,6 @@ func (w *Worker) Run(ctx context.Context) error {
 				}
 				err = w.filecacheClient.Download(ctx, w.fileCache, fileID)
 				if err != nil {
-					fmt.Println("Download", err)
 					return err
 				}
 				path, unlock, err = w.fileCache.Get(fileID)
@@ -135,13 +157,13 @@ func (w *Worker) Run(ctx context.Context) error {
 			for _, cmdWithArgs := range jobSpec.Cmds {
 				renderedCmd, err := cmdWithArgs.Render(build.JobContext{
 					SourceDir: tmpSourceDir,
-					OutputDir: ".",
-					Deps:      nil, // TODO
+					OutputDir: outputDir,
+					Deps:      depsMap,
 				})
 				if err != nil {
 					// TODO
 				}
-				spew.Dump(renderedCmd)
+				// spew.Dump(renderedCmd)
 
 				if len(renderedCmd.Exec) > 0 {
 					cmd := exec.Command(renderedCmd.Exec[0], renderedCmd.Exec[1:]...)
@@ -175,6 +197,18 @@ func (w *Worker) Run(ctx context.Context) error {
 				ExitCode: exitCode,
 				Error:    errStr,
 			}
+			artifactsDir, commitFn, abortFn, err := w.artifacts.Create(jobSpec.ID)
+			if err != nil {
+				// TODO в finishedJob записать
+			}
+
+			err = CopyDirectory(outputDir, artifactsDir)
+			if err != nil {
+				abortFn()
+				continue
+			}
+
+			commitFn()
 			finishedJob = append(finishedJob, jobResult)
 		}
 	}

@@ -4,6 +4,8 @@ package artifact
 
 import (
 	"context"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 
 	"gitlab.com/slon/shad-go/distbuild/pkg/tarstream"
@@ -18,6 +20,12 @@ func Download(ctx context.Context, endpoint string, c *Cache, artifactID build.I
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := ioutil.ReadAll(resp.Body)
+
+		return fmt.Errorf("artifact DOWNLOAD %s", string(b))
+	}
 
 	path, commit, abort, err := c.Create(artifactID)
 	if err != nil {

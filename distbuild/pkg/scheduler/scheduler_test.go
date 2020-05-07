@@ -2,7 +2,6 @@ package scheduler_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -56,16 +55,12 @@ func TestScheduler_SingleJob(t *testing.T) {
 
 	job0 := &api.JobSpec{Job: build.Job{ID: build.NewID()}}
 	pendingJob0 := s.ScheduleJob(job0)
-	// fmt.Println("BlockUntil")
 
 	s.BlockUntil(1)
 	s.Advance(config.DepsTimeout) // At this point job must be in global queue.
-	// fmt.Println("RegisterWorker")
 	s.RegisterWorker(workerID0)
-	// fmt.Println("PickJob 1")
 
 	pickerJob := s.PickJob(context.Background(), workerID0)
-	// fmt.Println("PickJob 2")
 
 	require.Equal(t, pendingJob0, pickerJob)
 
@@ -101,16 +96,12 @@ func TestScheduler_CacheLocalScheduling(t *testing.T) {
 
 	s.RegisterWorker(workerID0)
 	s.OnJobComplete(workerID0, cachedJob.ID, &api.JobResult{})
-	fmt.Println(">> 1")
 	pendingUncachedJob := s.ScheduleJob(uncachedJob)
 	pendingCachedJob := s.ScheduleJob(cachedJob)
-	fmt.Println(">> 2")
 
 	s.BlockUntil(2) // both jobs should be blocked
-	fmt.Println(">> 3")
 
 	firstPickedJob := s.PickJob(context.Background(), workerID0)
-	fmt.Println(">> 4")
 
 	assert.Equal(t, pendingCachedJob, firstPickedJob)
 

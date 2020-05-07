@@ -62,7 +62,6 @@ func (c *BuildClient) StartBuild(ctx context.Context, request *BuildRequest) (*B
 		return nil, nil, err
 	}
 
-	// fmt.Println(">>>>1", b.String())
 	req, err := http.NewRequest(http.MethodPost, c.endpoint+"/build", b)
 	if err != nil {
 		c.logger.Error("pkg/api/build_client.go StartBuild request", zap.Error(err))

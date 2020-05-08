@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	gopath "path"
 
@@ -21,6 +22,7 @@ type Client struct {
 	apiEndpoint     string
 	sourceDir       string
 	filecacheClient *filecache.Client
+	idx             int
 }
 
 func NewClient(
@@ -33,6 +35,7 @@ func NewClient(
 		apiEndpoint:     apiEndpoint,
 		sourceDir:       sourceDir,
 		filecacheClient: filecache.NewClient(l, apiEndpoint),
+		idx:             0,
 	}
 }
 
@@ -65,15 +68,22 @@ func (c *Client) Build(ctx context.Context, graph build.Graph, lsn BuildListener
 
 	// TODO: заливка отсутствующих файлов
 
+	idx := c.idx
+	c.idx++
+
 	for {
 		statusUpdate, err := statusReader.Next()
+		fmt.Printf("DDD: [%d] statusReader.Next(): пришел ответ %+v, %v\n", idx, statusUpdate, err)
 
 		if statusUpdate != nil && statusUpdate.JobFinished != nil {
+			fmt.Printf("DDD: [%d] statusReader.Next() задача выполнена %s\n\n", idx, statusUpdate.JobFinished.ID)
 			lsn.OnJobStdout(statusUpdate.JobFinished.ID, statusUpdate.JobFinished.Stdout) // ADDED
 			lsn.OnJobStderr(statusUpdate.JobFinished.ID, statusUpdate.JobFinished.Stderr) // ADDED
 			lsn.OnJobFinished(statusUpdate.JobFinished.ID)
 			// return nil
 			continue
+		} else {
+			fmt.Printf("DDD: [%d] statusReader.Next() задача НЕ выполнена\n\n", idx)
 		}
 
 		// TODO: HACK

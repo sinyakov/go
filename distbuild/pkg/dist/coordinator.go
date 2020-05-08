@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -21,6 +22,7 @@ type BuildService struct {
 	fileCache   *filecache.Cache
 	scheduler   *scheduler.Scheduler
 	jobsWriters map[build.ID]api.StatusWriter // ADDED
+	mutex       *sync.Mutex
 }
 
 func NewBuildService(logger *zap.Logger,
@@ -31,6 +33,7 @@ func NewBuildService(logger *zap.Logger,
 		fileCache:   fileCache,
 		scheduler:   scheduler,
 		jobsWriters: make(map[build.ID]api.StatusWriter), // ADDED
+		mutex:       &sync.Mutex{},
 	}
 }
 
@@ -58,30 +61,30 @@ func (svc *BuildService) StartBuild(ctx context.Context, request *api.BuildReque
 			w.Updated(&api.StatusUpdate{
 				JobFinished: pendingJob.Result,
 			})
+			fmt.Printf("DDD: уже готовая джоба, записан результат %v\n", pendingJob.Result)
 			continue
 		}
+
 		_, exists := svc.jobsWriters[pendingJob.Job.ID]
-
 		if !pendingJob.IsFinished && exists {
-			fmt.Printf("\n\n%v Finished JobRuning start  %s\n\n", time.Now(), job.ID.String())
-			<-pendingJob.Finished
-			fmt.Printf("\n\n%v Finished JobRuning stop %s\n\n", time.Now(), job.ID.String())
-
 			w.Started(buildStarted)
 
-			// fmt.Println(">>>> pendingJob.Result", pendingJob.Result)
+			<-pendingJob.Finished
+			// svc.mutex.Lock()
+			res := *pendingJob.Result
+			fmt.Printf("DDD: была в работе, доделалась, записан результат: %v\n", res)
 			w.Updated(&api.StatusUpdate{
-				JobFinished: pendingJob.Result,
+				JobFinished: &res,
 			})
+			// svc.mutex.Unlock()
 			continue
 		}
+
 		svc.jobsWriters[pendingJob.Job.ID] = w // ADDED, TODO: lock
 
 		w.Started(buildStarted)
 		// svc.logger.Info("pkg/dist/coordinator.go StartBuild started, locked")         // ADDED
-		fmt.Printf("\n\n%v Finished Started start  %s\n\n", time.Now(), job.ID.String())
 		<-pendingJob.Finished
-		fmt.Printf("\n\n%v Finished Started stop %s\n\n", time.Now(), job.ID.String())
 		// svc.logger.Info("pkg/dist/coordinator.go StartBuild started, channel closed") // ADDED
 	}
 	// fmt.Printf("\n\n%v StartBuild end\n\n", time.Now())
@@ -96,23 +99,26 @@ func (svc *BuildService) SignalBuild(ctx context.Context, buildID build.ID, sign
 
 func (svc *BuildService) Heartbeat(ctx context.Context, req *api.HeartbeatRequest) (*api.HeartbeatResponse, error) {
 	svc.logger.Info("pkg/dist/coordinator.go Heartbeat")
-	fmt.Printf("\n\n%v Heartbeat start %s\n\n", time.Now(), req.WorkerID)
+	fmt.Printf("\n%v Heartbeat start %s\n", time.Now(), req.WorkerID)
 
 	// println("!!! HeartbeatRequest")
 	// spew.Dump(req.FinishedJob)
 	for _, jobResult := range req.FinishedJob {
 		// fmt.Println("svc.jobsWriters", svc.jobsWriters)
+		svc.mutex.Lock()
 		statusWriter := svc.jobsWriters[jobResult.ID] // ADDED TODO: lock, exists check
-		fmt.Println("===== Heartbeat jobResult", req.WorkerID, jobResult)
+		fmt.Printf("DDD: выполнена на воркере, записан результат: %v\n", &jobResult)
 		statusWriter.Updated(&api.StatusUpdate{ // ADDED
 			JobFinished: &jobResult,
 		})
 		svc.scheduler.OnJobComplete(req.WorkerID, jobResult.ID, &jobResult) // ADDED (moved)
+		svc.mutex.Unlock()
 	}
 
-	fmt.Printf("\n\n%v Heartbeat before PickJob, %s\n\n", time.Now(), req.WorkerID)
 	pendingJob := svc.scheduler.PickJob(ctx, req.WorkerID)
-	fmt.Printf("\n\n%v Heartbeat after PickJob, %s\n\n", time.Now(), req.WorkerID)
+	if pendingJob != nil {
+		fmt.Printf("%v Heartbeat PickJob new job picked, %s\n", time.Now(), req.WorkerID)
+	}
 
 	if pendingJob == nil {
 		return &api.HeartbeatResponse{}, nil

@@ -17,12 +17,14 @@ import (
 )
 
 type statusReader struct {
-	body io.ReadCloser
+	body    io.ReadCloser
+	decoder *json.Decoder
 }
 
 func NewStatusReader(body io.ReadCloser) StatusReader {
 	return &statusReader{
-		body: body,
+		body:    body,
+		decoder: json.NewDecoder(body),
 	}
 }
 
@@ -32,8 +34,7 @@ func (sr *statusReader) Close() error {
 
 func (sr *statusReader) Next() (*StatusUpdate, error) {
 	var resp StatusUpdate
-	decoder := json.NewDecoder(sr.body)
-	err := decoder.Decode(&resp)
+	err := sr.decoder.Decode(&resp)
 	if err != nil {
 		return nil, err
 	}

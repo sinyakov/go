@@ -135,7 +135,7 @@ func (c *Scheduler) OnJobComplete(workerID api.WorkerID, jobID build.ID, res *ap
 
 	scheduledJob.pendingJob.Result = res
 	if !scheduledJob.pendingJob.IsFinished {
-		fmt.Printf("\n\n%v Channel Closed %s\n\n", time.Now(), scheduledJob.pendingJob.Job.ID.String())
+		// fmt.Printf("\n\n%v Channel Closed %s\n\n", time.Now(), scheduledJob.pendingJob.Job.ID.String())
 		close(scheduledJob.pendingJob.Finished)
 		scheduledJob.pendingJob.IsFinished = true
 	}
@@ -150,6 +150,8 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 		if scheduledJob.pendingJob.Result != nil && scheduledJob.pendingJob.Result.Error == nil {
 			scheduledJob.pendingJob.Finished = make(chan struct{})
 			scheduledJob.pendingJob.IsFinished = false
+			scheduledJob.pickedChan = make(chan struct{})
+			c.scheduledJobsQueue <- job.ID
 			return scheduledJob.pendingJob
 		}
 		if scheduledJob.pendingJob.IsFinished {
@@ -169,9 +171,11 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 	}
 
 	c.scheduledJobsMap[job.ID] = scheduledJob
-	// TODO: если есть воркер, у которого в кэше артифакты этого job.ID, добавляем к нем у в очередь и возвращаем pendingJob
 
+	// TODO: если есть воркер, у которого в кэше артифакты этого job.ID, добавляем к нем у в очередь и возвращаем pendingJob
 	workerID, found := c.LocateWorkerWithDeps(job.Deps)
+	// fmt.Printf("\nWorker.Run LocateWorkerWithDeps: %v, %v\n", workerID, found)
+
 	if !found {
 		go func() {
 			// c.scheduledJobsQueue <- job.ID
@@ -187,7 +191,11 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 
 	go func() {
 		c.workersMap[workerID].queue1 <- job.ID
+		fmt.Println("foundTrue", c.config.DepsTimeout)
 		select {
+		case <-time.NewTicker(c.config.DepsTimeout).C:
+			fmt.Println("NewTicker DepsTimeout")
+			c.scheduledJobsQueue <- job.ID
 		case <-timeAfter(c.config.CacheTimeout):
 			c.workersMap[workerID].queue2 <- job.ID
 			select {
@@ -198,26 +206,8 @@ func (c *Scheduler) ScheduleJob(job *api.JobSpec) *PendingJob {
 			}
 		case <-scheduledJob.pickedChan:
 			return
-		default:
 		}
 	}()
-	// go func() {
-	// 	fmt.Println("ScheduleJob start gourutine")
-	// 	select {
-	// 	// case <-c.workerRegistered:
-	// 	// c.scheduledJobsQueue <- job.ID
-	// 	case <-timeAfter(c.config.CacheTimeout):
-	// 		fmt.Println("ScheduleJob select CacheTimeout")
-	// 		c.scheduledJobsQueue <- job.ID
-	// 	case <-timeAfter(c.config.DepsTimeout):
-	// 		fmt.Println("ScheduleJob select DepsTimeout")
-	// 		c.scheduledJobsQueue <- job.ID
-	// 	default:
-	// 		fmt.Println("ScheduleJob select default, job:", job)
-	// 		c.scheduledJobsQueue <- job.ID
-	// 	}
-	// 	fmt.Println("ScheduleJob goroutine exited")
-	// }()
 
 	return pendingJob
 }
@@ -231,25 +221,28 @@ func (c *Scheduler) PickJob(ctx context.Context, workerID api.WorkerID) *Pending
 		c.RegisterWorker(workerID)
 		queues = c.workersMap[workerID]
 	}
-	// fmt.Println("queues", len(c.scheduledJobsQueue), len(queues.queue1), len(queues.queue2))
+	// fmt.Println("Scheduler.PickJob", workerID.String(), "queues", len(c.scheduledJobsQueue), len(queues.queue1), len(queues.queue2))
 	var pendingJobID build.ID
 	select {
 	case pendingJobID = <-c.scheduledJobsQueue:
+		// fmt.Printf("Scheduler.PickJob got job from global queue, worker: %s\n", workerID.String())
 	case pendingJobID = <-queues.queue1:
+		// fmt.Printf("Scheduler.PickJob got job from worker queue1, worker: %s\n", workerID.String())
 	case pendingJobID = <-queues.queue2:
+		// fmt.Printf("Scheduler.PickJob got job from worker queue2, worker: %s\n", workerID.String())
 	case <-ctx.Done():
+		// fmt.Printf("Scheduler.PickJob got ctx.Done, worker: %s\n", workerID.String())
 		return nil
 	}
 	c.scheduledJobsMutex.Lock()
 	sheduledJob := c.scheduledJobsMap[pendingJobID]
-	// if sheduledJob.isPicked {
-	// 	c.scheduledJobsMutex.Unlock()
-	// 	continue
-	// }
+	if sheduledJob.isPicked {
+		c.scheduledJobsMutex.Unlock()
+		return nil
+	}
 	sheduledJob.workerID = workerID
 	sheduledJob.isPicked = true
-	// TODO
-	// close(sheduledJob.pickedChan)
+	close(sheduledJob.pickedChan)
 
 	c.scheduledJobsMutex.Unlock()
 

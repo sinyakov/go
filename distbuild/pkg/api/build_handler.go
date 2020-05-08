@@ -26,6 +26,7 @@ type StatusWriterImpl struct {
 	w              http.ResponseWriter
 	flusher        http.Flusher
 	isHeaderWrited bool
+	encoder        *json.Encoder
 }
 
 func NewStatusWriter(w http.ResponseWriter) *StatusWriterImpl {
@@ -35,6 +36,7 @@ func NewStatusWriter(w http.ResponseWriter) *StatusWriterImpl {
 		w:              w,
 		flusher:        f,
 		isHeaderWrited: false,
+		encoder:        json.NewEncoder(w),
 	}
 }
 
@@ -50,10 +52,8 @@ func (sw *StatusWriterImpl) Started(rsp *BuildStarted) error {
 }
 
 func (sw *StatusWriterImpl) Updated(update *StatusUpdate) error {
-	err := json.NewEncoder(sw.w).Encode(update)
-	if sw.flusher != nil {
-		sw.flusher.Flush()
-	}
+	err := sw.encoder.Encode(update)
+	sw.flusher.Flush()
 	return err
 }
 

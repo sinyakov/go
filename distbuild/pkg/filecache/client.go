@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -55,6 +56,9 @@ func (c *Client) Upload(ctx context.Context, id build.ID, localPath string) erro
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return err
+		}
+		if strings.Contains(string(b), "file exists") {
+			return nil
 		}
 		return errors.New("UPLOAD " + string(b))
 	}

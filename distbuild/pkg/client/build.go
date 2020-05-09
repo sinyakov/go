@@ -77,9 +77,18 @@ func (c *Client) Build(ctx context.Context, graph build.Graph, lsn BuildListener
 
 		if statusUpdate != nil && statusUpdate.JobFinished != nil {
 			fmt.Printf("DDD: [%d] statusReader.Next() задача выполнена %s\n\n", idx, statusUpdate.JobFinished.ID)
-			lsn.OnJobStdout(statusUpdate.JobFinished.ID, statusUpdate.JobFinished.Stdout) // ADDED
-			lsn.OnJobStderr(statusUpdate.JobFinished.ID, statusUpdate.JobFinished.Stderr) // ADDED
-			lsn.OnJobFinished(statusUpdate.JobFinished.ID)
+			errOnJobStdout := lsn.OnJobStdout(statusUpdate.JobFinished.ID, statusUpdate.JobFinished.Stdout) // ADDED
+			if errOnJobStdout != nil {
+				return errOnJobStdout
+			}
+			errOnJobStdout = lsn.OnJobStderr(statusUpdate.JobFinished.ID, statusUpdate.JobFinished.Stderr) // ADDED
+			if errOnJobStdout != nil {
+				return errOnJobStdout
+			}
+			errOnJobStdout = lsn.OnJobFinished(statusUpdate.JobFinished.ID)
+			if errOnJobStdout != nil {
+				return errOnJobStdout
+			}
 			// return nil
 			continue
 		} else {

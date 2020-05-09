@@ -15,6 +15,7 @@ import (
 	gopath "path"
 	"path/filepath"
 	"strings"
+
 	// "time"
 
 	"go.uber.org/zap"
@@ -117,26 +118,26 @@ func (w *Worker) Run(ctx context.Context) error {
 			for artifactID, workerID := range jobSpec.Artifacts {
 				fmt.Println(">>", string(workerID))
 				if workerID != w.workerID {
-				for {
-					err := artifact.Download(ctx, string(workerID), w.artifacts, artifactID)
-					if err == nil {
-						break
+					for {
+						err := artifact.Download(ctx, string(workerID), w.artifacts, artifactID)
+						if err == nil {
+							break
+						}
+						if strings.Contains(err.Error(), "locked") {
+							// w.logger.Error("pkg/worker/worker.go Download waiting for unlock due", zap.String("workerID", string(workerID)), zap.Error(err))
+							continue
+						}
+						if strings.Contains(err.Error(), "artifact exists") {
+							// time.Sleep(time.Millisecond * 500) // TODO: BUG: удалить
+							// w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
+							break
+						}
+						if err != nil {
+							w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
+							// continue
+							return err
+						}
 					}
-					if strings.Index(err.Error(), "locked") >= 0 {
-						// w.logger.Error("pkg/worker/worker.go Download waiting for unlock due", zap.String("workerID", string(workerID)), zap.Error(err))
-						continue
-					}
-					if strings.Index(err.Error(), "artifact exists") >= 0 {
-						// time.Sleep(time.Millisecond * 500) // TODO: BUG: удалить
-						// w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
-						break
-					}
-					if err != nil {
-						w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
-						// continue
-						return err
-					}
-				}
 				}
 
 				for {
@@ -148,7 +149,7 @@ func (w *Worker) Run(ctx context.Context) error {
 						}
 						break
 					}
-					if strings.Index(err.Error(), "locked") >= 0 {
+					if strings.Contains(err.Error(), "locked") {
 						// w.logger.Error("pkg/worker/worker.go Download", zap.String("workerID", string(workerID)), zap.Error(err))
 						// unlockFn()
 						continue
@@ -159,7 +160,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			// fmt.Printf("\nWorker.run workerID: %s deps map: %+v\n", w.workerID, depsMap)
 
 			for fileID, fileNameWithPath := range jobSpec.SourceFiles {
-				path, unlock, err := w.fileCache.Get(fileID)
+				_, unlock, err := w.fileCache.Get(fileID)
 				if err == nil {
 					unlock()
 					continue
@@ -168,7 +169,7 @@ func (w *Worker) Run(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				path, unlock, err = w.fileCache.Get(fileID)
+				path, unlock, err := w.fileCache.Get(fileID)
 				if err != nil {
 					return err
 				}
@@ -178,7 +179,10 @@ func (w *Worker) Run(ctx context.Context) error {
 					_ = os.MkdirAll(dir, 0755)
 				}
 
-				CopyFile(path, filePath)
+				errCopyFile := CopyFile(path, filePath)
+				if err != nil {
+					return errCopyFile
+				}
 				unlock()
 			}
 
@@ -199,7 +203,7 @@ func (w *Worker) Run(ctx context.Context) error {
 				// spew.Dump(renderedCmd)
 
 				if len(renderedCmd.Exec) > 0 {
-				    fmt.Printf("    WorkerID: %s, Exec: %s\n", w.workerID, renderedCmd.Exec[0])
+					fmt.Printf("    WorkerID: %s, Exec: %s\n", w.workerID, renderedCmd.Exec[0])
 					cmd := exec.Command(renderedCmd.Exec[0], renderedCmd.Exec[1:]...)
 					cmd.Stdout = &stdout
 					cmd.Stderr = &stderr
@@ -215,7 +219,7 @@ func (w *Worker) Run(ctx context.Context) error {
 					break
 				}
 				if renderedCmd.CatOutput != "" {
-				    fmt.Printf("    WorkerID: %s, CatOutput: %s\n", w.workerID, renderedCmd.CatOutput)
+					fmt.Printf("    WorkerID: %s, CatOutput: %s\n", w.workerID, renderedCmd.CatOutput)
 					err := ioutil.WriteFile(renderedCmd.CatOutput, []byte(renderedCmd.CatTemplate), 0666)
 					if err == nil {
 						continue
@@ -240,11 +244,17 @@ func (w *Worker) Run(ctx context.Context) error {
 
 			err = CopyDirectory(outputDir, artifactsDir)
 			if err != nil {
-				abortFn()
+				errAbort := abortFn()
+				if errAbort != nil {
+					return errAbort
+				}
 				continue
 			}
 
-			commitFn()
+			errCommit := commitFn()
+			if errCommit != nil {
+				return errCommit
+			}
 			finishedJob = append(finishedJob, jobResult)
 		}
 	}

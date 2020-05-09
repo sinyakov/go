@@ -57,32 +57,47 @@ func (svc *BuildService) StartBuild(ctx context.Context, request *api.BuildReque
 
 		if pendingJob.Result != nil && pendingJob.Result.Error == nil {
 			// TODO: шедулить джобу, результаты кэша брать из ответа воркера
-			w.Started(buildStarted)
-			w.Updated(&api.StatusUpdate{
+			err := w.Started(buildStarted)
+			if err != nil {
+				return err
+			}
+			err = w.Updated(&api.StatusUpdate{
 				JobFinished: pendingJob.Result,
 			})
+			if err != nil {
+				return err
+			}
 			fmt.Printf("DDD: уже готовая джоба, записан результат %v\n", pendingJob.Result)
 			continue
 		}
 
 		_, exists := svc.jobsWriters[pendingJob.Job.ID]
 		if !pendingJob.IsFinished && exists {
-			w.Started(buildStarted)
+			err := w.Started(buildStarted)
+			if err != nil {
+				return err
+			}
 
 			<-pendingJob.Finished
 			// svc.mutex.Lock()
 			res := *pendingJob.Result
 			fmt.Printf("DDD: была в работе, доделалась, записан результат: %v\n", res)
-			w.Updated(&api.StatusUpdate{
+			err = w.Updated(&api.StatusUpdate{
 				JobFinished: &res,
 			})
+			if err != nil {
+				return err
+			}
 			// svc.mutex.Unlock()
 			continue
 		}
 
 		svc.jobsWriters[pendingJob.Job.ID] = w // ADDED, TODO: lock
 
-		w.Started(buildStarted)
+		err := w.Started(buildStarted)
+		if err != nil {
+			return err
+		}
 		// svc.logger.Info("pkg/dist/coordinator.go StartBuild started, locked")         // ADDED
 		<-pendingJob.Finished
 		// svc.logger.Info("pkg/dist/coordinator.go StartBuild started, channel closed") // ADDED
@@ -104,14 +119,18 @@ func (svc *BuildService) Heartbeat(ctx context.Context, req *api.HeartbeatReques
 	// println("!!! HeartbeatRequest")
 	// spew.Dump(req.FinishedJob)
 	for _, jobResult := range req.FinishedJob {
+		result := jobResult
 		// fmt.Println("svc.jobsWriters", svc.jobsWriters)
 		svc.mutex.Lock()
 		statusWriter := svc.jobsWriters[jobResult.ID] // ADDED TODO: lock, exists check
-		fmt.Printf("DDD: выполнена на воркере, записан результат: %v\n", &jobResult)
-		statusWriter.Updated(&api.StatusUpdate{ // ADDED
-			JobFinished: &jobResult,
+		fmt.Printf("DDD: выполнена на воркере, записан результат: %v\n", &result)
+		err := statusWriter.Updated(&api.StatusUpdate{ // ADDED
+			JobFinished: &result,
 		})
-		svc.scheduler.OnJobComplete(req.WorkerID, jobResult.ID, &jobResult) // ADDED (moved)
+		if err != nil {
+			return nil, err
+		}
+		svc.scheduler.OnJobComplete(req.WorkerID, jobResult.ID, &result) // ADDED (moved)
 		svc.mutex.Unlock()
 	}
 

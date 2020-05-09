@@ -74,7 +74,8 @@ func (c *Client) Download(ctx context.Context, localCache *Cache, id build.ID) e
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, err := ioutil.ReadAll(resp.Body)
+		var b []byte
+		b, err = ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return err
 		}

@@ -14,6 +14,7 @@ import (
 
 var threeWorkerConfig = &Config{WorkerCount: 3}
 
+// run test!
 func TestArtifactTransferBetweenWorkers(t *testing.T) {
 	env, cancel := newEnv(t, threeWorkerConfig)
 	defer cancel()
